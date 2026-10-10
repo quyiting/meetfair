@@ -11,6 +11,22 @@ const WEEKDAYS = '日一二三四五六'
 const SEARCH_CACHE_TTL_MS = 5 * 60 * 1000
 const SEARCH_CACHE_LIMIT = 64
 const searchCache = new Map()
+const TENCENT_SEARCH_INTERVAL_MS = 250
+let tencentSearchQueue = Promise.resolve()
+let nextTencentSearchAt = 0
+
+function delay(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds))
+}
+
+function queueTencentSearch() {
+  // 同一实例的所有搜索共享发送节奏；只排队请求开始时间，不等待 HTTP 响应。
+  tencentSearchQueue = tencentSearchQueue.then(async () => {
+    while (Date.now() < nextTencentSearchAt) await delay(nextTencentSearchAt - Date.now())
+    nextTencentSearchAt = Date.now() + TENCENT_SEARCH_INTERVAL_MS
+  })
+  return tencentSearchQueue
+}
 
 function cachedSearch(provider, origin, category, meeting, pageSize, search) {
   const key = [provider, origin.latitude.toFixed(3), origin.longitude.toFixed(3), category, meeting.date, meeting.time, pageSize].join('|')
@@ -122,10 +138,21 @@ async function searchTencent(origin, category, meeting, pageSize = PAGE_SIZE) {
     keyword: CATEGORY_QUERIES[category], page_size: pageSize, page_index: 1, orderby: '_distance', key
   }
   if (sk) params.sig = md5(path + '?' + sortedQuery(params) + sk)
-  const response = await requestJson('apis.map.qq.com', path, params)
-  const payload = response.data || {}
-  if (response.statusCode !== 200 || payload.status !== 0) throw new Error(payload.message || '腾讯地图请求失败')
-  return (payload.data || []).map((result) => toTencentVenue(result, category))
+  for (let attempt = 0; ; attempt++) {
+    await queueTencentSearch()
+    const response = await requestJson('apis.map.qq.com', path, params)
+    const payload = response.data || {}
+    if (payload.status === 120) {
+      if (attempt === 2) throw new Error('地图服务暂时繁忙，请稍后再试')
+      // 其他实例也可能共用同一个 Key；被限流时延长当前实例的共享冷却时间。
+      const backoff = 1000 * (attempt + 1) + Math.floor(Math.random() * 250)
+      nextTencentSearchAt = Math.max(nextTencentSearchAt, Date.now() + backoff)
+      console.info('[venueService]', JSON.stringify({ action: 'search', provider: 'tencent', status: 'rate_limited', retry: attempt + 1 }))
+      continue
+    }
+    if (response.statusCode !== 200 || payload.status !== 0) throw new Error(payload.message || '腾讯地图请求失败')
+    return (payload.data || []).map((result) => toTencentVenue(result, category))
+  }
 }
 
 function toAmapVenue(poi, category, meeting) {
