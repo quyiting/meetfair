@@ -313,7 +313,15 @@ exports.main = async (event) => {
         (point, kind, at) => search(point, kind, at, pageSize))))
       cacheHits += groups.filter((group) => group.cacheHit).length
       groups.flatMap((group) => group.venues).forEach((venue) => {
-        if (Number.isFinite(venue.latitude) && Number.isFinite(venue.longitude) && !venuesById.has(venue.id)) venuesById.set(venue.id, venue)
+        const rawId = String(venue.id || '')
+        const id = rawId.length > 160 ? rawId.slice(0, 127) + '-' + md5(rawId) : rawId
+        const name = String(venue.name || '').trim().slice(0, 80)
+        if (!id || !name || !Number.isFinite(venue.latitude) || venue.latitude < -90 || venue.latitude > 90 ||
+          !Number.isFinite(venue.longitude) || venue.longitude < -180 || venue.longitude > 180 || venuesById.has(id)) return
+        const boundedNumber = (value, max) => Number.isFinite(value) && value >= 0 && value <= max ? value : null
+        venuesById.set(id, Object.assign({}, venue, { id, name,
+          rating: boundedNumber(venue.rating, 5), price: boundedNumber(venue.price, 100000),
+          distanceMeters: boundedNumber(venue.distanceMeters, 1000000) }))
       })
     }
     const venues = Array.from(venuesById.values()).slice(0, 100)

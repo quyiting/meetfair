@@ -30,7 +30,11 @@ https.get = (options, callback) => {
     response.setEncoding = () => {}
     callback(response)
     response.emit('data', JSON.stringify({ status, message: messages[status] || 'query ok',
-      data: status ? [] : [{ id: query.get('boundary') + query.get('keyword'), title: '测试地点',
+      data: status ? [] : mode === 'badVenueData' ? [
+        { id: 'x'.repeat(200), title: '电影'.repeat(50), location: { lat: 31.2, lng: 121.4 }, _distance: -1 },
+        { title: '电影院'.repeat(40), location: { lat: 31.21, lng: 121.41 }, _distance: 'invalid' },
+        { id: 'out-of-range', title: '错误坐标', location: { lat: 123, lng: 121.4 }, _distance: 100 }
+      ] : [{ id: query.get('boundary') + query.get('keyword'), title: '测试地点',
         location: { lat: 31.2, lng: 121.4 }, address: '测试地址' }] }))
     response.emit('end')
   })
@@ -81,6 +85,18 @@ async function run() {
     assert.strictEqual(failed.ok, false)
     assert.strictEqual(requests.length, 1, '每日额度或签名错误不应自动重试')
   }
+  mode = 'badVenueData'
+  requests = []
+  const normalized = await main(searchEvent(32.0, 'cinema'))
+  assert.strictEqual(normalized.ok, true)
+  assert.strictEqual(normalized.venues.length, 2, '超出坐标范围的地点不应进入房间数据')
+  normalized.venues.forEach((venue) => {
+    assert(venue.id.length <= 160, '地点 ID 应满足 roomService 的长度限制')
+    assert(venue.name.length > 0 && venue.name.length <= 80, '地点名称应满足 roomService 的长度限制')
+    assert(venue.distanceMeters === null ||
+      (Number.isFinite(venue.distanceMeters) && venue.distanceMeters >= 0 && venue.distanceMeters <= 1000000),
+    '无效距离不应导致 roomService 拒绝整批地点')
+  })
   console.log('venue rate limit tests: ok')
 }
 
