@@ -26,6 +26,22 @@ async function run() {
   assert.deepStrictEqual(page.data.markers, [])
   assert.strictEqual(page.data.isMember, false)
 
+  stored = [{
+    id: 'owner-empty', cloudId: 'ABC234', schemaVersion: 2, title: '先建房',
+    category: 'food', currentUserIsOwner: true, currentMemberId: '',
+    members: [], venues: [], routeMatrix: {}, memberRevision: 0, venueMemberRevision: 0
+  }]
+  const ownerPage = Object.assign({}, page, { data: Object.assign({}, page.data), roomId: 'owner-empty' })
+  await ownerPage.loadRoom(true)
+  assert.strictEqual(ownerPage.data.isMember, false)
+  assert.strictEqual(ownerPage.data.waitingForMembers, true)
+  assert.strictEqual(ownerPage.data.point, null)
+  assert.deepStrictEqual(ownerPage.data.markers, [])
+  assert.strictEqual(ownerPage.data.timeSuggestions.length, 0)
+
+  stored = [{ id: 'room-preview', title: '周末聚会', category: 'food', dateText: '2026-10-01 18:30',
+    cloudId: 'ABC234', preview: true, memberCount: 2, members: [], venues: [] }]
+
   require('../miniprogram/pages/index/index')
   const indexPage = Object.assign({}, global.roomPage, {
     data: {}, setData(values) { Object.assign(this.data, values) }

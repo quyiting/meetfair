@@ -66,6 +66,7 @@ Page({
     joinApproximate: false,
     budgets,
     isMember: false,
+    waitingForMembers: false,
     joinSubmitting: false
   },
   onLoad(options) {
@@ -154,12 +155,24 @@ Page({
         room: Object.assign({}, room, { categoryLabel: CATEGORY_LABELS[room.category] }),
         point: null, recommendations: [], selectedVenueId: '', markers: [],
         recommendationsStale: false, timeSuggestions: [], timeResponded: 0, topRecommendationReason: '',
-        isMember: false, claimableMembers: [], codePreview: room.cloudId,
+        isMember: false, waitingForMembers: room.schemaVersion === 2 && room.memberCount < 2,
+        claimableMembers: [], codePreview: room.cloudId,
         codeLabel: '聚会码 · 6 位'
       })
       return
     }
     const { venues, venueSource } = room
+    const isMember = Boolean(room.currentMemberId && room.members.some((m) => m.id === room.currentMemberId))
+    if (room.schemaVersion === 2 && room.members.length < 2) {
+      this.setData({
+        room: Object.assign({}, room, { categoryLabel: CATEGORY_LABELS[room.category] }),
+        point: null, recommendations: [], topRecommendationReason: '',
+        recommendationsStale: false, timeSuggestions: [], timeResponded: 0,
+        selectedVenueId: '', markers: [], isMember, waitingForMembers: true,
+        claimableMembers: [], codePreview: room.cloudId, codeLabel: '聚会码 · 6 位'
+      })
+      return
+    }
     const point = midpoint(room.members)
     const recommendations = recommendVenues(room, this.data.activeCategory, this.data.activeGoal).map((venue) => {
       const votes = (room.votes && room.votes[venue.id]) || []
@@ -168,7 +181,6 @@ Page({
     const selectedVenueId = recommendations.some((venue) => venue.id === this.data.selectedVenueId)
       ? this.data.selectedVenueId : (recommendations[0] && recommendations[0].id) || ''
     const markers = this.getMarkers(room, recommendations, selectedVenueId)
-    const isMember = Boolean(room.currentMemberId && room.members.some((m) => m.id === room.currentMemberId))
     const recommendationsStale = (room.memberRevision || 0) !== (room.venueMemberRevision || 0) ||
       Boolean(room.meetingSearchTime && room.meetingSearchTime !== room.meetingTime)
     const timeResponded = room.members.filter((member) => Array.isArray(member.availability) && member.availability.length).length
@@ -195,12 +207,14 @@ Page({
       selectedVenueId,
       markers,
       isMember,
+      waitingForMembers: false,
       claimableMembers,
       // 有云端短码就展示短码，否则退回本地长码预览
       codePreview: room.cloudId || (encodeRoom(room).slice(0, 12) + '...'),
       codeLabel: room.cloudId ? '聚会码 · 6 位' : '聚会码 · 长码'
     })
     // 如果没有地点数据，自动搜索
+    if (room.schemaVersion === 2) return
     if (!venues || !venues.length) {
       if (!room.cloudId || room.currentUserIsOwner) this.refreshNearby()
     } else if (recommendationsStale && room.cloudId && room.currentUserIsOwner && !localOnly &&
@@ -243,37 +257,39 @@ Page({
     this.setData({ activeGoal, goalDescription: descriptions[activeGoal], selectedVenueId: '' }, () => this.loadRoom(true))
   },
   refreshNearby() {
-    if (this.data.refreshingNearby) return
+    if (this.data.refreshingNearby) return Promise.resolve()
     const room = getRoom(this.roomId)
-    if (!room || !room.members || !room.members.length) return
-    if (room.cloudId && !room.currentUserIsOwner) {
+    if (!room || !room.members || !room.members.length || (room.schemaVersion === 2 && room.members.length < 2)) return Promise.resolve()
+    const isMember = Boolean(room.currentMemberId && room.members.some((member) => member.id === room.currentMemberId))
+    if (room.cloudId && !room.currentUserIsOwner && !(room.schemaVersion === 2 && isMember)) {
       wx.showToast({ title: '请创建者更新推荐', icon: 'none' })
-      return
+      return Promise.resolve()
     }
     const origins = candidateOrigins(room.members)
     const meetingDate = room.meetingDate || String(room.dateText || '').slice(0, 10)
     const meetingTime = room.meetingTime || String(room.dateText || '').slice(11, 16)
     if (!/^\d{4}-\d{2}-\d{2}$/.test(meetingDate) || !/^\d{2}:\d{2}$/.test(meetingTime)) {
       wx.showToast({ title: '聚会时间不完整，无法刷新地点', icon: 'none' })
-      return
+      return Promise.resolve()
     }
     this.setData({ refreshingNearby: true })
     wx.showLoading({ title: '搜索附近地点' })
     // 始终搜索全部类别，缓存后按标签筛选
-    getNearbyVenues(origins, 'all', meetingDate, meetingTime).then((searchResult) => {
-      room.venues = searchResult.venues
-      room.venueSource = searchResult.source
-      room.venueSearchAt = Date.now()
-      room.routeMatrix = {}
-      return getRouteMatrix(room.members, routeCandidates(room), meetingDate, meetingTime).then((routeResult) => {
-        room.routeMatrix = routeResult.routeMatrix || {}
+    return getNearbyVenues(origins, 'all', meetingDate, meetingTime).then((searchResult) => {
+      if (!searchResult.venues.length) throw new Error('暂未找到附近地点，请稍后重试')
+      const searchRoom = Object.assign({}, room, {
+        venues: searchResult.venues, venueSource: searchResult.source,
+        venueSearchAt: Date.now(), routeMatrix: {}
+      })
+      return getRouteMatrix(room.members, routeCandidates(searchRoom), meetingDate, meetingTime).then((routeResult) => {
+        searchRoom.routeMatrix = routeResult.routeMatrix || {}
         if (!room.cloudId) {
-          room.venueMemberRevision = room.memberRevision || 0
-          room.meetingSearchTime = room.meetingTime || ''
+          searchRoom.venueMemberRevision = room.memberRevision || 0
+          searchRoom.meetingSearchTime = room.meetingTime || ''
         }
         return room.cloudId
-          ? cloudSetVenues(room, searchResult.venues, searchResult.source, room.routeMatrix)
-          : Promise.resolve(updateRoom(room))
+          ? cloudSetVenues(room, searchResult.venues, searchResult.source, searchRoom.routeMatrix)
+          : Promise.resolve(updateRoom(searchRoom))
       }).then(() => {
         wx.hideLoading()
         this.setData({ refreshingNearby: false })
@@ -417,7 +433,9 @@ Page({
     wx.showToast({ title: hasVoted ? '已取消投票' : '已投给这个地点', icon: 'none' })
   },
   openJoinModal() {
-    this.setData({ showJoinModal: true, editingMember: false, joinName: '', joinClaimCode: '', joinLocationName: '', joinLatitude: null, joinLongitude: null })
+    this.setData({ showJoinModal: true, editingMember: false, joinName: '', joinClaimCode: '',
+      joinLocationName: '', joinLatitude: null, joinLongitude: null,
+      joinTransport: 'transit', joinBudget: 100, joinApproximate: false })
   },
   openEditMember() {
     const room = getRoom(this.roomId)
@@ -435,6 +453,7 @@ Page({
   closeJoinModal() {
     this.setData({ showJoinModal: false, editingMember: false })
   },
+  noop() {},
   setJoinName(event) {
     const name = event.detail.value.slice(0, 8)
     this.setData({ joinName: name })
@@ -538,14 +557,18 @@ Page({
     const save = wasEditing
       ? updateMyMember(this.roomId, member)
       : addMemberToRoom(this.roomId, member, this.data.joinClaimCode)
-    save.then((savedRoom) => {
+    return save.then((savedRoom) => {
       this.setData({ joinSubmitting: false })
       this.closeJoinModal()
-      this.loadRoom(true).then(() => {
-        this.startWatch()
-        if (!savedRoom.cloudId || savedRoom.currentUserIsOwner) this.refreshNearby()
-      })
       wx.showToast({ title: wasEditing ? '已更新我的信息' : '已成功加入聚会', icon: 'success' })
+      return this.loadRoom(true).then(() => {
+        this.startWatch()
+        if (savedRoom.schemaVersion === 2) {
+          if (savedRoom.autoRecommendNow) return this.refreshNearby()
+        } else if (!savedRoom.cloudId || savedRoom.currentUserIsOwner) {
+          return this.refreshNearby()
+        }
+      })
     }).catch((error) => {
       this.setData({ joinSubmitting: false })
       wx.showToast({ title: error.message || '加入失败', icon: 'none' })

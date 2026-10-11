@@ -145,10 +145,17 @@ function getViewerMemberId(doc, openid) {
   const binding = (doc.memberBindings || []).find((item) => item.openid === openid)
   if (binding) return binding.memberId
   // 兼容部署本版本前创建的房间：旧数据只有 owner，没有 memberBindings。
-  if (doc.owner === openid && doc.room && doc.room.members && doc.room.members[0]) {
+  if (doc.owner === openid && doc.room && doc.room.schemaVersion !== 2 && doc.room.members && doc.room.members[0]) {
     return doc.room.members[0].id
   }
   return ''
+}
+
+function canUpdateVenues(doc, openid) {
+  if (doc.owner === openid) return true
+  if (doc.room.schemaVersion !== 2) return false
+  const memberId = getViewerMemberId(doc, openid)
+  return Boolean(memberId && doc.room.members.some((member) => member.id === memberId))
 }
 
 async function ensureCollection(name) {
@@ -194,7 +201,8 @@ async function createRoom(room, openid) {
     const code = generateCode()
     const existing = await db.collection(COLLECTION).where({ code }).count()
     if (existing.total > 0) continue
-    const ownerMemberId = room.members[0].id || generateMemberId()
+    const isRoomFirst = room.schemaVersion === 2
+    const ownerMemberId = isRoomFirst ? '' : (room.members[0].id || generateMemberId())
     const signalId = crypto.randomBytes(16).toString('hex')
     const retentionHours = RETENTION_HOURS.indexOf(Number(room.retentionHours)) >= 0 ? Number(room.retentionHours) : 720
     const expiresAt = Date.now() + retentionHours * 3600000
@@ -202,6 +210,7 @@ async function createRoom(room, openid) {
     const venues = normalizeVenues(room.venues)
     const savedRoom = {
       id: String(room.id).slice(0, 80),
+      ...(isRoomFirst ? { schemaVersion: 2 } : {}),
       title: String(room.title).trim().slice(0, 18),
       category: room.category,
       preferenceText: String(room.preferenceText || '').trim().slice(0, 60),
@@ -228,7 +237,7 @@ async function createRoom(room, openid) {
         clientRoomId: openid + ':' + String(room.id).slice(0, 80),
         room: savedRoom,
         owner: openid,
-        memberBindings: [{ memberId: ownerMemberId, openid }],
+        memberBindings: isRoomFirst ? [] : [{ memberId: ownerMemberId, openid }],
         signals: { [openid]: signalId },
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -250,7 +259,11 @@ exports.main = async (event) => {
     if (action === 'create') {
       const room = event.room
       if (!room || !room.id || !String(room.title || '').trim() || CATEGORIES.indexOf(room.category) < 0 ||
-        !Array.isArray(room.members) || !room.members.length || !Array.isArray(room.venues) || room.venues.length > 100) {
+        !Array.isArray(room.members) || (room.schemaVersion === 2 ? room.members.length !== 0 : !room.members.length) ||
+        !Array.isArray(room.venues) || room.venues.length > 100 ||
+        (room.schemaVersion === 2 && (room.venues.length !== 0 ||
+          !/^\d{4}-\d{2}-\d{2}$/.test(room.meetingDate || '') ||
+          !/^([01]\d|2[0-3]):[0-5]\d$/.test(room.meetingTime || '')))) {
         return { ok: false, message: '聚会数据不合法' }
       }
       if (room.members.length > 8) return { ok: false, message: '成员最多 8 人' }
@@ -283,15 +296,15 @@ exports.main = async (event) => {
         return { ok: false, code: 'ROOM_EXPIRED', message: '聚会已过期' }
       }
       const viewerMemberId = getViewerMemberId(doc, OPENID)
-      if (!viewerMemberId) {
-        const { id, title, category, dateText } = doc.room
+      if (!viewerMemberId && doc.owner !== OPENID) {
+        const { id, title, category, dateText, schemaVersion } = doc.room
         return { ok: true, code: doc.code, room: {
-          id, title, category, dateText, transport: 'mixed', cloudId: doc.code, expiresAt,
+          id, title, category, dateText, schemaVersion, transport: 'mixed', cloudId: doc.code, expiresAt,
           memberCount: doc.room.members.length, members: [], venues: [], preview: true
         }, viewerMemberId: '', isOwner: false, claimableMemberIds: [], signalId: '' }
       }
       const room = Object.assign({}, doc.room, { cloudId: doc.code, expiresAt })
-      const signalId = await ensureViewerSignal(doc, OPENID)
+      const signalId = viewerMemberId ? await ensureViewerSignal(doc, OPENID) : (doc.signals || {})[OPENID] || ''
       return { ok: true, code: doc.code, room, viewerMemberId, isOwner: doc.owner === OPENID,
         claimableMemberIds: doc.owner === OPENID ? claimableMemberIds(doc) : [], signalId }
     }
@@ -328,7 +341,7 @@ exports.main = async (event) => {
         if (!current) throw new Error('聚会不存在')
         if (current.expiresAt < Date.now()) throw new Error('聚会已过期')
         const existingMemberId = getViewerMemberId(current, OPENID)
-        if (existingMemberId) return { room: current.room, memberId: existingMemberId, doc: current }
+        if (existingMemberId) return { room: current.room, memberId: existingMemberId, doc: current, autoRecommendNow: false }
         let claimableMember = null
         if (claimCode) {
           if (!CLAIM_CODE_PATTERN.test(claimCode)) throw new Error('认领码格式不正确')
@@ -340,25 +353,29 @@ exports.main = async (event) => {
         if (!claimableMember && current.room.members.length >= 8) throw new Error('聚会人数已满')
         const memberId = claimableMember ? claimableMember.id : generateMemberId()
         const member = normalizeMember(event.member, memberId)
+        const autoRecommendNow = current.room.schemaVersion === 2 && !current.room.firstRecommendationTriggeredAt &&
+          current.room.members.length === 1
         const room = Object.assign({}, current.room, {
           cloudId: code,
           memberRevision: (current.room.memberRevision || 0) + 1,
           routeMatrix: claimableMember ? {} : current.room.routeMatrix,
+          ...(autoRecommendNow ? { firstRecommendationTriggeredAt: Date.now() } : {}),
           members: claimableMember
             ? current.room.members.map((item) => item.id === memberId ? member : item)
             : current.room.members.concat(member)
         })
         const memberBindings = (current.memberBindings || []).concat({ memberId, openid: OPENID })
         const claimCodes = Object.assign({}, current.claimCodes || {})
-        const signalId = crypto.randomBytes(16).toString('hex')
+        const signalId = (current.signals || {})[OPENID] || crypto.randomBytes(16).toString('hex')
         const signals = Object.assign({}, current.signals || {}, { [OPENID]: signalId })
         if (claimableMember) delete claimCodes[memberId]
         await transaction.collection(COLLECTION).doc(doc._id).update({ data: { room, memberBindings, claimCodes, signals, updatedAt: Date.now() } })
-        return { room, memberId, doc: Object.assign({}, current, { room, memberBindings, signals }) }
+        return { room, memberId, doc: Object.assign({}, current, { room, memberBindings, signals }), autoRecommendNow }
       })
       const signalId = await ensureViewerSignal(joined.doc, OPENID)
       await publishSignals(joined.doc.signals)
       return { ok: true, code, room: joined.room, viewerMemberId: joined.memberId, isOwner: doc.owner === OPENID,
+        autoRecommendNow: Boolean(joined.autoRecommendNow),
         claimableMemberIds: doc.owner === OPENID ? claimableMemberIds(joined.doc) : [], signalId }
     }
 
@@ -465,12 +482,13 @@ exports.main = async (event) => {
       const code = String(event.code || '').toUpperCase()
       const doc = CODE_PATTERN.test(code) ? await findRoom(code) : null
       if (!doc) return { ok: false, message: '聚会不存在' }
-      if (doc.owner !== OPENID) return { ok: false, message: '只有创建者可以更新地点' }
+      if (!canUpdateVenues(doc, OPENID)) return { ok: false, message: '请先加入聚会' }
       const result = await db.runTransaction(async (transaction) => {
         const current = (await transaction.collection(COLLECTION).doc(doc._id).get()).data
         if (!current) throw new Error('聚会不存在')
         if (current.expiresAt < Date.now()) throw new Error('聚会已过期')
-        if (current.owner !== OPENID) throw new Error('只有创建者可以更新地点')
+        if (!canUpdateVenues(current, OPENID)) throw new Error('请先加入聚会')
+        if (current.room.schemaVersion === 2 && current.room.members.length < 2) throw new Error('至少两人加入后才能推荐地点')
         const memberId = getViewerMemberId(current, OPENID)
         if (event.memberRevision !== (current.room.memberRevision || 0)) throw new Error('成员已变化，请重新搜索地点')
         if (current.room.meetingTime && event.meetingTime !== current.room.meetingTime) throw new Error('聚会时间已变化，请重新搜索地点')
@@ -484,7 +502,7 @@ exports.main = async (event) => {
           meetingSearchTime: current.room.meetingTime || '',
           venueSearchAt: Date.now()
         })
-        await transaction.collection(COLLECTION).doc(doc._id).update({ data: { room, updatedAt: Date.now() } })
+        await transaction.collection(COLLECTION).doc(doc._id).update({ data: { room: db.command.set(room), updatedAt: Date.now() } })
         return { room, memberId, doc: current }
       }, 3)
       await publishSignals(result.doc.signals)

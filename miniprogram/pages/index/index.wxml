@@ -9,17 +9,17 @@
     <view class="hero-orbit orbit-two"></view>
     <view class="eyebrow hero-eyebrow">MEET FAIRLY</view>
     <view class="hero-title">别再纠结<br/>"到底去哪儿见"</view>
-    <view class="hero-copy">每个人报一个出发点，聚点帮你找到大家都不太远的好去处。</view>
-    <button class="primary-button hero-button" bindtap="goCreate">发起一次聚会</button>
+    <view class="hero-copy">先创建聚会并分享链接，大家再各自提交出发位置；满 2 人后推荐公平的见面地点。</view>
+    <button class="primary-button hero-button" bindtap="goCreate">创建聚会并邀请</button>
     <button class="join-code-button" bindtap="openJoinCodeModal">通过聚会码加入</button>
   </view>
 
   <view class="steps">
-    <view class="step"><text class="step-number">01</text><text>朋友提交位置</text></view>
+    <view class="step"><text class="step-number">01</text><text>建房并分享</text></view>
     <view class="step-line"></view>
-    <view class="step"><text class="step-number">02</text><text>计算公平路线</text></view>
+    <view class="step"><text class="step-number">02</text><text>各自提交位置</text></view>
     <view class="step-line"></view>
-    <view class="step"><text class="step-number">03</text><text>投票定地点</text></view>
+    <view class="step"><text class="step-number">03</text><text>推荐并投票</text></view>
   </view>
 
   <view wx:if="{{rooms.length}}" class="my-section">

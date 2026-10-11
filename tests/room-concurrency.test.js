@@ -9,7 +9,7 @@ const roomDoc = {
   memberBindings: [{ memberId: 'member-1', openid: 'owner' }, { memberId: 'member-2', openid: 'guest' }], signals: {},
   room: {
     id: 'room-1', cloudId: 'ABC234', members: [{ id: 'member-1' }],
-    venues: [venue('venue-1')], votes: {}, routeMatrix: {}, memberRevision: 1, venueMemberRevision: 1,
+    venues: [venue('venue-1')], venueSource: null, votes: {}, routeMatrix: {}, memberRevision: 1, venueMemberRevision: 1,
     meetingTime: '18:30', meetingSearchTime: '18:30'
   }
 }
@@ -24,12 +24,22 @@ const collection = {
     assert.strictEqual(id, roomDoc._id)
     return {
       async get() { return { data: clone(roomDoc) } },
-      async update({ data }) { Object.assign(roomDoc, clone(data)) }
+      async update({ data }) {
+        const updated = clone(data)
+        if (updated.room && updated.room.__setValue) {
+          updated.room = updated.room.__setValue
+        } else if (roomDoc.room.venueSource === null && updated.room &&
+          updated.room.venueSource && typeof updated.room.venueSource === 'object') {
+          throw new Error("Cannot create field 'label' in element {venueSource: null}")
+        }
+        Object.assign(roomDoc, updated)
+      }
     }
   }
 }
 let transactionQueue = Promise.resolve()
 const db = {
+  command: { set(value) { return { __setValue: value } } },
   collection() { return collection },
   async runTransaction(callback) {
     const previous = transactionQueue
@@ -54,10 +64,12 @@ Module._load = originalLoad
 async function run() {
   const [vote, refresh] = await Promise.all([
     roomService.main({ action: 'toggleVote', code: 'ABC234', venueId: 'venue-1' }),
-    roomService.main({ action: 'setVenues', code: 'ABC234', memberRevision: 1, meetingTime: '18:30', venues: [venue('venue-1'), venue('venue-2')] })
+    roomService.main({ action: 'setVenues', code: 'ABC234', memberRevision: 1, meetingTime: '18:30',
+      venues: [venue('venue-1'), venue('venue-2')], venueSource: { label: '测试来源' } })
   ])
   assert.strictEqual(vote.ok, true)
   assert.strictEqual(refresh.ok, true)
+  assert.strictEqual(roomDoc.room.venueSource.label, '测试来源', '首次推荐应能把空来源更新为来源对象')
   assert.deepStrictEqual(roomDoc.room.votes['venue-1'], ['member-1'], '刷新地点不能覆盖刚提交的投票')
   assert.deepStrictEqual(roomDoc.room.venues.map((item) => item.id), ['venue-1', 'venue-2'])
   roomDoc.room.memberRevision = 2
@@ -80,6 +92,36 @@ async function run() {
   assert.strictEqual(invalidVenue.ok, false)
   const invalidRoute = await roomService.main({ action: 'setVenues', code: 'ABC234', memberRevision: 2, meetingTime: '19:00', venues: [venue('venue-3')], routeMatrix: { 'venue-3': { 'member-1': { minutes: -20 } } } })
   assert.strictEqual(invalidRoute.ok, false)
+
+  roomDoc.room.schemaVersion = 2
+  roomDoc.room.members = [{ id: 'member-1' }, { id: 'member-2' }]
+  openid = 'guest'
+  const guestV2Refresh = await roomService.main({ action: 'setVenues', code: 'ABC234',
+    memberRevision: 2, meetingTime: '19:00', venues: [venue('guest-venue')] })
+  assert.strictEqual(guestV2Refresh.ok, true, '新版房间已加入成员可以更新推荐')
+  assert.strictEqual(guestV2Refresh.viewerMemberId, 'member-2')
+  assert.strictEqual(roomDoc.room.venues[0].id, 'guest-venue')
+  openid = 'stranger'
+  const outsider = await roomService.main({ action: 'setVenues', code: 'ABC234',
+    memberRevision: 2, meetingTime: '19:00', venues: [venue('stranger-venue')] })
+  assert.strictEqual(outsider.ok, false)
+  openid = 'guest'
+  roomDoc.room.members = [{ id: 'member-2' }]
+  const alone = await roomService.main({ action: 'setVenues', code: 'ABC234',
+    memberRevision: 2, meetingTime: '19:00', venues: [venue('alone-venue')] })
+  assert.strictEqual(alone.ok, false, '不足两人不能推荐')
+  roomDoc.room.members.push({ id: 'member-1' })
+  roomDoc.room.memberRevision = 3
+  const staleV2 = await roomService.main({ action: 'setVenues', code: 'ABC234',
+    memberRevision: 2, meetingTime: '19:00', venues: [venue('stale-v2')] })
+  assert.strictEqual(staleV2.ok, false)
+  assert.strictEqual(roomDoc.room.venues[0].id, 'guest-venue')
+
+  roomDoc.memberBindings = [{ memberId: 'member-2', openid: 'guest' }]
+  openid = 'owner'
+  const unjoinedOwner = await roomService.main({ action: 'setVenues', code: 'ABC234',
+    memberRevision: 3, meetingTime: '19:00', venues: [venue('owner-venue')] })
+  assert.strictEqual(unjoinedOwner.ok, true, '新版房主即使未提交位置也能更新已有成员推荐')
   console.log('room concurrency tests: ok')
 }
 

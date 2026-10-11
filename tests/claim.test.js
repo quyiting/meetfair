@@ -188,6 +188,70 @@ async function run() {
   assert.strictEqual(expired.code, 'ROOM_EXPIRED')
   assert(!docs.includes(expiringDoc))
   assert.strictEqual(signals[shortLived.signalId], undefined)
+
+  openid = 'fresh-owner'
+  const emptyRoom = {
+    id: 'room-empty-v2', schemaVersion: 2, title: '先建房', category: 'food',
+    meetingDate: '2026-10-12', meetingTime: '18:30', dateText: '2026-10-12 18:30',
+    members: [], venues: [], routeMatrix: {}
+  }
+  const emptyCreated = await roomService.main({ action: 'create', room: emptyRoom })
+  assert.strictEqual(emptyCreated.ok, true, '新版房间应允许创建者暂不填写位置')
+  assert.strictEqual(emptyCreated.viewerMemberId, '')
+  assert.deepStrictEqual(emptyCreated.room.members, [])
+  assert.deepStrictEqual(emptyCreated.room.venues, [])
+  assert.strictEqual(emptyCreated.room.schemaVersion, 2)
+  const emptyDoc = docs.find((item) => item.code === emptyCreated.code)
+  assert.deepStrictEqual(emptyDoc.memberBindings, [])
+  assert.strictEqual((await roomService.main({ action: 'create', room: emptyRoom })).code, emptyCreated.code)
+  const ownerEmptyView = await roomService.main({ action: 'get', code: emptyCreated.code })
+  assert.strictEqual(ownerEmptyView.isOwner, true)
+  assert.strictEqual(ownerEmptyView.room.preview, undefined)
+  assert.strictEqual(ownerEmptyView.viewerMemberId, '')
+  assert.strictEqual(ownerEmptyView.signalId, emptyCreated.signalId)
+
+  openid = 'first-friend'
+  const emptyPreview = await roomService.main({ action: 'get', code: emptyCreated.code })
+  assert.strictEqual(emptyPreview.room.preview, true)
+  assert.strictEqual(emptyPreview.room.memberCount, 0)
+  assert(!JSON.stringify(emptyPreview).includes('latitude'))
+  const firstFriend = await roomService.main({ action: 'join', code: emptyCreated.code,
+    member: member('', '朋友先到') })
+  assert.strictEqual(firstFriend.ok, true)
+  assert.strictEqual(firstFriend.room.members.length, 1)
+  assert.strictEqual(firstFriend.autoRecommendNow, false)
+
+  openid = 'fresh-owner'
+  const ownerStillUnjoined = await roomService.main({ action: 'get', code: emptyCreated.code })
+  assert.strictEqual(ownerStillUnjoined.isOwner, true)
+  assert.strictEqual(ownerStillUnjoined.viewerMemberId, '', '房主不能冒充先加入的朋友')
+  assert.strictEqual(ownerStillUnjoined.room.members.length, 1)
+  const ownerJoined = await roomService.main({ action: 'join', code: emptyCreated.code,
+    member: member('', '房主') })
+  assert.strictEqual(ownerJoined.ok, true)
+  assert.notStrictEqual(ownerJoined.viewerMemberId, firstFriend.viewerMemberId)
+  assert.strictEqual(ownerJoined.signalId, emptyCreated.signalId, '房主提交位置后沿用原实时信号')
+  assert.strictEqual(ownerJoined.room.members.length, 2)
+  assert.strictEqual(ownerJoined.autoRecommendNow, true)
+
+  openid = 'another-stranger'
+  const joinedPreview = await roomService.main({ action: 'get', code: emptyCreated.code })
+  assert.strictEqual(joinedPreview.room.memberCount, 2)
+  assert(!JSON.stringify(joinedPreview).includes('latitude'))
+
+  openid = 'first-friend'
+  assert.strictEqual((await roomService.main({ action: 'leave', code: emptyCreated.code })).ok, true)
+  openid = 'replacement-friend'
+  const replacement = await roomService.main({ action: 'join', code: emptyCreated.code,
+    member: member('', '后来加入') })
+  assert.strictEqual(replacement.ok, true)
+  assert.strictEqual(replacement.room.members.length, 2)
+  assert.strictEqual(replacement.autoRecommendNow, false, '再次达到两人后只允许手动更新')
+
+  openid = 'fresh-owner'
+  const deletedEmpty = await roomService.main({ action: 'delete', code: emptyCreated.code })
+  assert.strictEqual(deletedEmpty.ok, true, '未填写位置的房主仍可管理房间')
+  assert(!docs.includes(emptyDoc))
   console.log('claim tests: ok')
 }
 

@@ -19,13 +19,14 @@
       <view class="room-time">{{room.dateText}} · {{room.preview ? room.memberCount : room.members.length}} 人参与</view>
       <block wx:if="{{!room.preview}}">
         <view class="avatar-strip"><view wx:for="{{room.members}}" wx:key="id" class="member-avatar" style="background: {{item.color}}">{{item.shortName}}</view><view wx:if="{{!isMember}}" class="add-avatar join-avatar" bindtap="openJoinModal">＋</view></view>
-        <view wx:if="{{!isMember}}" class="join-hint">你还没加入，点击头像加入聚会</view>
+        <view wx:if="{{!isMember}}" class="join-hint">你还没提交出发位置，可点击 ＋ 填写</view>
         <view wx:else class="joined-hint">位置已收集</view>
       </block>
     </view>
   </view>
 
   <view class="page-shell result-shell">
+    <button wx:if="{{room.cloudId && !room.preview}}" class="room-share-button {{waitingForMembers ? '' : 'room-share-secondary'}}" open-type="share">分享小程序链接给朋友</button>
     <view wx:if="{{!room.cloudId && room.currentUserIsOwner}}" class="empty-card card">
       <view class="empty-title">聚会仅保存在本机</view>
       <view class="empty-copy">{{room.syncError || '云端尚未同步，朋友无法通过 6 位聚会码协作。'}}</view>
@@ -33,12 +34,25 @@
     </view>
     <block wx:if="{{room.preview}}">
       <view class="empty-card card">
-        <view class="empty-title">加入后查看完整推荐</view>
-        <view class="empty-copy">成员位置、地图和推荐地点仅向已加入的成员展示。</view>
+        <view class="empty-title">加入后查看聚会详情</view>
+        <view class="empty-copy">成员位置、地图和推荐地点仅向已加入的成员展示；满 2 人后开始推荐。</view>
         <button class="empty-action" bindtap="openJoinModal">填写我的出发位置并加入</button>
       </view>
     </block>
     <block wx:else>
+    <block wx:if="{{waitingForMembers}}">
+      <view class="empty-card card waiting-card">
+        <view class="waiting-progress">{{room.members.length}} / 至少 2 人</view>
+        <view class="empty-title">等待大家提交出发位置</view>
+        <view class="empty-copy">把上方链接发给朋友，每个人打开后自己填写位置。满 2 人会自动尝试推荐。</view>
+        <button wx:if="{{!isMember}}" class="empty-action" bindtap="openJoinModal">填写我的位置</button>
+        <button wx:else class="time-edit-button" bindtap="openEditMember">修改我的位置</button>
+      </view>
+      <button wx:if="{{room.currentUserIsOwner}}" class="delete-room-button" bindtap="deleteCurrentRoom">删除本次聚会及位置数据</button>
+      <button wx:if="{{isMember && !room.currentUserIsOwner}}" class="delete-room-button" bindtap="leaveCurrentRoom">退出聚会并删除我的位置</button>
+    </block>
+    <block wx:else>
+    <button wx:if="{{room.schemaVersion === 2 && !isMember}}" class="empty-action join-full-room" bindtap="openJoinModal">填写我的位置并加入</button>
     <view wx:if="{{room.finalVenue}}" class="card final-venue-card">
       <view class="section-title">已确定的聚会地点</view>
       <view class="final-venue-name">{{room.finalVenue.name}}</view>
@@ -64,10 +78,10 @@
       <view class="fairness-text"><view class="fairness-title">选择这次聚会的推荐目标</view><view class="fairness-copy">{{goalDescription}}。下拉页面可同步朋友的加入和投票。</view></view>
     </view>
     <view wx:if="{{recommendationsStale}}" class="empty-card card">
-      <view class="empty-title">成员信息已变化，推荐待更新</view>
-      <view class="empty-copy">当前地点和路线基于旧成员信息，更新后再比较通勤时间。</view>
-      <button wx:if="{{!room.cloudId || room.currentUserIsOwner}}" class="empty-action" disabled="{{refreshingNearby}}" bindtap="refreshNearby">{{refreshingNearby ? '正在更新…' : '更新推荐'}}</button>
-      <view wx:else class="empty-copy">等待创建者更新推荐后会自动同步。</view>
+      <view class="empty-title">{{room.schemaVersion === 2 && !room.venues.length ? '等待生成首次推荐' : '成员信息已变化，推荐待更新'}}</view>
+      <view class="empty-copy">{{room.schemaVersion === 2 && !room.venues.length ? '已有 2 人提交位置，点击生成地点建议；搜索失败也不会影响已加入成员。' : '当前地点和路线基于旧成员信息，更新后再比较通勤时间。'}}</view>
+      <button wx:if="{{!room.cloudId || room.currentUserIsOwner || (room.schemaVersion === 2 && isMember)}}" class="empty-action" disabled="{{refreshingNearby}}" bindtap="refreshNearby">{{refreshingNearby ? '正在更新…' : (room.schemaVersion === 2 && !room.venues.length ? '生成推荐' : '更新推荐')}}</button>
+      <view wx:else class="empty-copy">等待有权限的成员更新推荐后会自动同步。</view>
     </view>
 
     <map class="meeting-map" latitude="{{point.latitude}}" longitude="{{point.longitude}}" scale="13" markers="{{markers}}" show-location="false"></map>
@@ -75,7 +89,7 @@
 
     <view class="category-tabs"><view wx:for="{{categories}}" wx:key="id" class="category-tab {{activeCategory === item.id ? 'tab-active' : ''}}" bindtap="selectCategory" data-id="{{item.id}}">{{item.label}}</view></view>
     <view class="goal-tabs"><view wx:for="{{goals}}" wx:key="id" class="category-tab {{activeGoal === item.id ? 'tab-active' : ''}}" bindtap="selectGoal" data-id="{{item.id}}">{{item.label}}</view></view>
-    <view class="list-heading"><view><view class="section-title">推荐地点</view><view class="section-subtitle">{{room.venueSourceLabel}}</view></view><button wx:if="{{!room.cloudId || room.currentUserIsOwner}}" class="search-nearby" bindtap="refreshNearby">更新附近</button></view>
+    <view class="list-heading"><view><view class="section-title">推荐地点</view><view class="section-subtitle">{{room.venueSourceLabel}}</view></view><button wx:if="{{!room.cloudId || room.currentUserIsOwner || (room.schemaVersion === 2 && isMember)}}" class="search-nearby" disabled="{{refreshingNearby}}" bindtap="refreshNearby">{{room.schemaVersion === 2 && !room.venues.length ? '生成推荐' : '更新附近'}}</button></view>
     <view wx:if="{{topRecommendationReason}}" class="recommendation-reason">{{topRecommendationReason}}</view>
 
     <view wx:if="{{recommendations.length}}" class="venue-list">
@@ -96,7 +110,7 @@
       <view class="empty-icon">⌕</view>
       <view class="empty-title">这里暂时没有匹配地点</view>
       <view class="empty-copy">试试切换活动类型，或重新搜索折中区域附近的地点。</view>
-      <button wx:if="{{!room.cloudId || room.currentUserIsOwner}}" class="empty-action" bindtap="refreshNearby">重新搜索附近</button>
+      <button wx:if="{{!room.cloudId || room.currentUserIsOwner || (room.schemaVersion === 2 && isMember)}}" class="empty-action" disabled="{{refreshingNearby}}" bindtap="refreshNearby">重新搜索附近</button>
     </view>
     <button wx:if="{{room.currentUserIsOwner && selectedVenueId}}" class="confirm-venue-button" bindtap="confirmSelectedVenue">{{room.finalVenue ? '重新确定选中的地点' : '确定选中的地点'}}</button>
     <view wx:if="{{claimableMembers.length}}" class="claim-card card">
@@ -108,10 +122,11 @@
     <button wx:if="{{room.currentUserIsOwner}}" class="delete-room-button" bindtap="deleteCurrentRoom">删除本次聚会及位置数据</button>
     <button wx:if="{{isMember && !room.currentUserIsOwner}}" class="delete-room-button" bindtap="leaveCurrentRoom">退出聚会并删除我的位置</button>
     </block>
+    </block>
   </view>
 
   <view wx:if="{{showJoinModal}}" class="modal-mask" bindtap="closeJoinModal">
-    <view class="modal-dialog" catchtap="">
+    <view class="modal-dialog" catchtap="noop">
       <view class="modal-header">
         <view class="modal-title">{{editingMember ? '编辑我的信息' : '加入聚会'}}</view>
         <view class="modal-close" bindtap="closeJoinModal">×</view>
@@ -120,9 +135,9 @@
         <view class="form-group">
           <view class="form-label">你的名字</view>
           <input class="form-input" placeholder="输入名字，最多8个字" value="{{joinName}}" bindinput="setJoinName" />
-          <view wx:if="{{!editingMember}}" class="form-hint">创建者预填了你的信息时，请向创建者索取认领码。</view>
+          <view wx:if="{{!editingMember && room.schemaVersion !== 2}}" class="form-hint">创建者预填了你的信息时，请向创建者索取认领码。</view>
         </view>
-        <view wx:if="{{!editingMember}}" class="form-group">
+        <view wx:if="{{!editingMember && room.schemaVersion !== 2}}" class="form-group">
           <view class="form-label">认领码（选填）</view>
           <input class="form-input" placeholder="认领预填成员时填写 16 位码" maxlength="16" value="{{joinClaimCode}}" bindinput="setJoinClaimCode" />
         </view>
@@ -159,7 +174,7 @@
     </view>
   </view>
   <view wx:if="{{showAvailabilityModal}}" class="modal-mask" bindtap="closeAvailabilityModal">
-    <view class="modal-dialog" catchtap="">
+    <view class="modal-dialog" catchtap="noop">
       <view class="modal-header"><view class="modal-title">{{room.meetingDate}} 我的可用时间</view><view class="modal-close" bindtap="closeAvailabilityModal">×</view></view>
       <view class="modal-body">
         <view class="form-hint">可填写最多 5 段时间；建议以约 1 小时聚会时长计算。</view>

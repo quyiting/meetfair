@@ -94,6 +94,20 @@ function cloudCreateRoom(room) {
   })
 }
 
+function cloudCreateRoomStrict(room) {
+  return callRoomService('create', { room }).then((result) => {
+    const savedRoom = Object.assign({}, result.room || room, {
+      cloudId: result.code,
+      currentMemberId: result.viewerMemberId || '',
+      currentUserIsOwner: Boolean(result.isOwner),
+      claimableMemberIds: result.claimableMemberIds || [],
+      signalId: result.signalId || ''
+    })
+    updateRoom(savedRoom)
+    return savedRoom
+  })
+}
+
 function cloudErrorText(error) {
   if (error.code === 'FUNCTION_NOT_FOUND') return '云函数未部署，请联系创建者检查云开发配置'
   if (error.code === 'NETWORK_ERROR') return '网络或云服务暂时不可用，请稍后重试'
@@ -135,7 +149,7 @@ function addMemberToRoom(roomId, member, claimCode) {
         signalId: result.signalId || ''
       })
       updateRoom(syncedRoom)
-      return syncedRoom
+      return Object.assign({}, syncedRoom, { autoRecommendNow: Boolean(result.autoRecommendNow) })
     })
   }
   const existingMember = room.currentMemberId && room.members.find((m) => m.id === room.currentMemberId)
@@ -501,6 +515,7 @@ module.exports = {
   encodeRoom,
   decodeRoom,
   cloudCreateRoom,
+  cloudCreateRoomStrict,
   cloudGetRoom,
   cloudErrorText,
   addMemberToRoom,
