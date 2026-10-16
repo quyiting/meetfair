@@ -1,6 +1,11 @@
 const { getRoom, updateRoom, encodeRoom, addMemberToRoom, updateMyMember, updateMyAvailability, setMeetingTime, cloudCreateRoom, cloudGetRoom, cloudErrorText, cloudIssueClaimCode, cloudToggleVote, cloudSetVenues, setFinalVenue, cloudLeaveRoom, cloudDeleteRoom } = require('../../utils/store')
 const { midpoint, candidateOrigins, routeCandidates, recommendVenues, explainTopRecommendation } = require('../../utils/recommend')
-const { recommendMeetingTimes } = require('../../utils/meeting-time')
+const { recommendRoomTimes, getDateAvailability, hasAnsweredAllDates } = require('../../utils/meeting-time')
+const { getAttendanceSummary, isFinalPlanComplete } = require('../../utils/room-state')
+const { setMyAttendance } = require('../../utils/store')
+const { nominateVenue, removeNomination, setNominationRoutes } = require('../../utils/store')
+const { getRoomCandidates } = require('../../utils/candidates')
+const { endRoom } = require('../../utils/store')
 const { prepareMemberLocation } = require('../../utils/privacy')
 const { CATEGORY_LABELS, TRANSPORT_LABELS } = require('../../utils/constants')
 const { getNearbyVenues, getRouteMatrix } = require('../../utils/venue-service')
@@ -28,11 +33,17 @@ Page({
     refreshingNearby: false,
     timeSuggestions: [],
     timeResponded: 0,
+    collectionProgress: null,
+    finalPlanComplete: false, attendanceSummary: null, attendanceSaving: false, finalEndTime: '', planUpdated: false,
+    nominationDraft: null, nominationSaving: false, nominatedVenues: [], nominationCategoryIndex: 0,
+    endingRoom: false,
+    nominationCategories: [{ id: 'food', label: '吃饭' }, { id: 'cinema', label: '电影' }, { id: 'coffee', label: '咖啡' }, { id: 'fun', label: '娱乐' }],
     showAvailabilityModal: false,
     availabilityDraft: [],
     availabilityStart: '18:00',
     availabilityEnd: '21:00',
     availabilitySaving: false,
+    availabilityDate: '', availabilityDates: [], availabilityDateIndex: 0, dateResponses: [],
     activeCategory: 'all',
     activeGoal: 'max',
     goals: [
@@ -129,10 +140,11 @@ Page({
     )
   },
   async loadRoom(localOnly) {
+    const previousRoom = this.data.room
     let room = getRoom(this.roomId)
     const cloudCode = (room && room.cloudId) || (SHORT_CODE_PATTERN.test(String(this.roomId || '').toUpperCase()) ? this.roomId : '')
     if (cloudCode && !localOnly) {
-      this.setData({ room: null, point: null, recommendations: [], markers: [], loadError: '' })
+      this.setData({ room: null, point: null, recommendations: [], markers: [], collectionProgress: null, loadError: '' })
       let lookupError = null
       const cloudRoom = await cloudGetRoom(cloudCode, (error) => { lookupError = error })
       if (!cloudRoom) {
@@ -150,6 +162,7 @@ Page({
       return
     }
     this.setData({ loadError: '' })
+    if (room.endedAt) this.setData({ showJoinModal: false, showAvailabilityModal: false, nominationDraft: null })
     if (room.preview) {
       this.setData({
         room: Object.assign({}, room, { categoryLabel: CATEGORY_LABELS[room.category] }),
@@ -157,12 +170,40 @@ Page({
         recommendationsStale: false, timeSuggestions: [], timeResponded: 0, topRecommendationReason: '',
         isMember: false, waitingForMembers: room.schemaVersion === 2 && room.memberCount < 2,
         claimableMembers: [], codePreview: room.cloudId,
+        collectionProgress: null, finalPlanComplete: false, attendanceSummary: null, nominatedVenues: [], nominationDraft: null, planUpdated: false,
         codeLabel: '聚会码 · 6 位'
       })
       return
     }
     const { venues, venueSource } = room
+    room.candidateDates = room.candidateDates || [room.meetingDate]
+    room.durationMinutes = room.durationMinutes || 60
+    const dateResponses = room.candidateDates.map((date) => ({ date,
+      responded: room.members.filter((m) => Array.isArray(getDateAvailability(m, date, room.meetingDate))).length }))
+    this.setData({ dateResponses })
     const isMember = Boolean(room.currentMemberId && room.members.some((m) => m.id === room.currentMemberId))
+    this.setData({ nominatedVenues: (room.nominatedVenues || []).map((v) => ({ ...v,
+      canRemove: (room.currentUserIsOwner || v.proposerId === room.currentMemberId) && !(room.finalVenue && room.finalVenue.id === v.id) })) })
+    const progressMembers = room.members.map((member) => ({ id: member.id, name: member.name,
+      timeSubmitted: hasAnsweredAllDates(room, member) }))
+    const currentMember = progressMembers.find((member) => member.id === room.currentMemberId)
+    const finalPlanComplete = isFinalPlanComplete(room), attendanceSummary = getAttendanceSummary(room)
+    const [hour, minute] = (room.meetingTime || '00:00').split(':').map(Number)
+    const endMinutes = hour * 60 + minute + room.durationMinutes
+    this.setData({ finalPlanComplete, attendanceSummary,
+      planUpdated: Boolean(this.data.planUpdated || (previousRoom && previousRoom.id === room.id &&
+        (previousRoom.planRevision || 0) !== (room.planRevision || 0))),
+      finalEndTime: `${endMinutes >= 1440 ? '次日 ' : ''}${String(Math.floor(endMinutes / 60) % 24).padStart(2, '0')}:${String(endMinutes % 60).padStart(2, '0')}` })
+    const expectedCount = Number.isInteger(room.expectedMemberCount) && room.expectedMemberCount >= 2 && room.expectedMemberCount <= 8
+      ? room.expectedMemberCount : 0
+    const nextAction = !currentMember ? 'join' : !currentMember.timeSubmitted ? 'time'
+      : finalPlanComplete && !attendanceSummary.myStatus ? 'attendance' : room.members.length < 2 ? 'invite' : 'recommendations'
+    this.setData({ collectionProgress: {
+      expectedCount, remainingCount: Math.max(0, expectedCount - room.members.length),
+      locationCount: room.members.length, timeCount: progressMembers.filter((member) => member.timeSubmitted).length,
+      members: progressMembers, nextAction,
+      nextLabel: { join: '填写我的位置', time: '填写可用时间', invite: '邀请朋友提交位置', recommendations: '查看推荐', attendance: '确认是否参加最终方案' }[nextAction]
+    } })
     if (room.schemaVersion === 2 && room.members.length < 2) {
       this.setData({
         room: Object.assign({}, room, { categoryLabel: CATEGORY_LABELS[room.category] }),
@@ -182,12 +223,13 @@ Page({
       ? this.data.selectedVenueId : (recommendations[0] && recommendations[0].id) || ''
     const markers = this.getMarkers(room, recommendations, selectedVenueId)
     const recommendationsStale = (room.memberRevision || 0) !== (room.venueMemberRevision || 0) ||
+      Boolean(room.meetingSearchDate && room.meetingSearchDate !== room.meetingDate) ||
       Boolean(room.meetingSearchTime && room.meetingSearchTime !== room.meetingTime)
-    const timeResponded = room.members.filter((member) => Array.isArray(member.availability) && member.availability.length).length
+    const timeResponded = room.members.filter((member) => hasAnsweredAllDates(room, member)).length
     const travelVenue = room.finalVenue
       ? recommendVenues(room, 'all').find((venue) => venue.id === room.finalVenue.id) || recommendations[0]
       : recommendations[0]
-    const timeSuggestions = recommendMeetingTimes(room.members, room.meetingDate, room.meetingTime,
+    const timeSuggestions = recommendRoomTimes(room,
       travelVenue ? travelVenue.maxMinutes : 0)
     const claimableMembers = room.currentUserIsOwner
       ? room.members.filter((member) => (room.claimableMemberIds || []).indexOf(member.id) >= 0)
@@ -214,7 +256,7 @@ Page({
       codeLabel: room.cloudId ? '聚会码 · 6 位' : '聚会码 · 长码'
     })
     // 如果没有地点数据，自动搜索
-    if (room.schemaVersion === 2) return
+    if (room.schemaVersion === 2 || room.endedAt) return
     if (!venues || !venues.length) {
       if (!room.cloudId || room.currentUserIsOwner) this.refreshNearby()
     } else if (recommendationsStale && room.cloudId && room.currentUserIsOwner && !localOnly &&
@@ -257,6 +299,7 @@ Page({
     this.setData({ activeGoal, goalDescription: descriptions[activeGoal], selectedVenueId: '' }, () => this.loadRoom(true))
   },
   refreshNearby() {
+    if (!this.canEditRoom()) return Promise.resolve()
     if (this.data.refreshingNearby) return Promise.resolve()
     const room = getRoom(this.roomId)
     if (!room || !room.members || !room.members.length || (room.schemaVersion === 2 && room.members.length < 2)) return Promise.resolve()
@@ -286,6 +329,7 @@ Page({
         if (!room.cloudId) {
           searchRoom.venueMemberRevision = room.memberRevision || 0
           searchRoom.meetingSearchTime = room.meetingTime || ''
+          searchRoom.meetingSearchDate = room.meetingDate || ''
         }
         return room.cloudId
           ? cloudSetVenues(room, searchResult.venues, searchResult.source, searchRoom.routeMatrix)
@@ -307,12 +351,100 @@ Page({
     const room = this.data.room
     this.setData({ selectedVenueId, markers: this.getMarkers(room, this.data.recommendations, selectedVenueId) })
   },
+  followProgressAction() {
+    if (!this.canEditRoom()) return
+    const progress = this.data.collectionProgress
+    if (!progress) return
+    if (progress.nextAction === 'join') this.openJoinModal()
+    else if (progress.nextAction === 'time') this.openAvailabilityModal()
+    else if (progress.nextAction === 'recommendations') wx.pageScrollTo({ selector: '#recommendations-section', duration: 300 })
+    else if (progress.nextAction === 'attendance') wx.pageScrollTo({ selector: '#final-plan-section', duration: 300 })
+  },
+  submitAttendance(event) {
+    const room = this.data.room, status = event.currentTarget.dataset.status
+    if (!room || !this.data.isMember || !this.data.finalPlanComplete || room.endedAt || this.data.attendanceSaving || !['yes', 'maybe', 'no'].includes(status)) return
+    const revision = room.planRevision || 0
+    this.setData({ attendanceSaving: true })
+    return setMyAttendance(this.roomId, status, revision).then(() => this.loadRoom(true)).catch((error) => {
+      wx.showToast({ title: error.message || '保存失败，请刷新后重试', icon: 'none' })
+      return this.loadRoom()
+    }).finally(() => this.setData({ attendanceSaving: false }))
+  },
+  chooseNominationLocation() {
+    if (!this.data.isMember || this.data.nominationSaving || this.data.room.endedAt) return
+    wx.chooseLocation({ success: (location) => {
+      this.setData({ nominationDraft: { name: location.name || '', address: location.address || '',
+        latitude: location.latitude, longitude: location.longitude, category: this.data.room.category },
+      nominationCategoryIndex: Math.max(0, this.data.nominationCategories.findIndex((c) => c.id === this.data.room.category)) })
+    }, fail: (error) => {
+      if (!/cancel/.test(error.errMsg || '')) wx.showToast({ title: '无法选择地点，请检查定位权限', icon: 'none' })
+    } })
+  },
+  closeNomination() { if (!this.data.nominationSaving) this.setData({ nominationDraft: null }) },
+  setNominationName(event) {
+    this.setData({ nominationDraft: { ...this.data.nominationDraft, name: event.detail.value.slice(0, 80) } })
+  },
+  selectNominationCategory(event) {
+    const index = Number(event.detail.value), category = this.data.nominationCategories[index]
+    if (category) this.setData({ nominationCategoryIndex: index, nominationDraft: { ...this.data.nominationDraft, category: category.id } })
+  },
+  submitNomination() {
+    const venue = this.data.nominationDraft
+    if (this.data.nominationSaving || !this.data.isMember || !venue || this.data.room.endedAt) return
+    if (!venue.name.trim() || !Number.isFinite(venue.latitude) || Math.abs(venue.latitude) > 90 || !Number.isFinite(venue.longitude) || Math.abs(venue.longitude) > 180) {
+      wx.showToast({ title: '请填写名称并选择有效地点', icon: 'none' }); return
+    }
+    this.setData({ nominationSaving: true })
+    return nominateVenue(this.roomId, venue).then(({ room, venueId }) => {
+      this.setData({ nominationDraft: null })
+      this.loadRoom(true)
+      wx.showToast({ title: '地点已提名', icon: 'success' })
+      // 提名已经独立保存；路线失败只影响精度，不撤销地点。
+      if (room.members.length < 2) return
+      const candidate = getRoomCandidates(room).find((v) => v.id === venueId)
+      return getRouteMatrix(room.members, [candidate], room.meetingDate, room.meetingTime)
+        .then((result) => setNominationRoutes(room, venueId, (result.routeMatrix || {})[venueId] || {}))
+        .then(() => this.loadRoom(true)).catch(() => {
+          wx.showToast({ title: '提名已保存，路线暂用估算', icon: 'none' })
+        })
+    }).catch((error) => wx.showToast({ title: error.message || '提名失败', icon: 'none' }))
+      .finally(() => this.setData({ nominationSaving: false }))
+  },
+  removeNominatedVenue(event) {
+    if (this.data.nominationSaving || !this.data.room || this.data.room.endedAt) return
+    const id = event.currentTarget.dataset.id
+    if (!this.data.nominatedVenues.some((v) => v.id === id && v.canRemove)) return
+    wx.showModal({ title: '删除提名地点', content: '同时清除该地点的投票和路线，确定删除吗？', success: (choice) => {
+      if (!choice.confirm) return
+      this.setData({ nominationSaving: true })
+      removeNomination(this.roomId, id).then(() => this.loadRoom(true))
+        .catch((e) => wx.showToast({ title: e.message || '删除失败', icon: 'none' }))
+        .finally(() => this.setData({ nominationSaving: false }))
+    } })
+  },
   openAvailabilityModal() {
+    if (!this.canEditRoom()) return
     const room = getRoom(this.roomId)
     const member = room && room.members.find((item) => item.id === room.currentMemberId)
     if (!member) return
+    const dates = room.candidateDates || [room.meetingDate]
+    const date = dates.find((d) => !Array.isArray(getDateAvailability(member, d, room.meetingDate))) || dates[0]
     this.setData({ showAvailabilityModal: true,
-      availabilityDraft: (member.availability || []).map((range) => Object.assign({}, range)) })
+      availabilityDate: date, availabilityDates: dates, availabilityDateIndex: dates.indexOf(date),
+      availabilityDraft: (getDateAvailability(member, date, room.meetingDate) || []).map((range) => Object.assign({}, range)) })
+  },
+  selectAvailabilityDate(event) {
+    if (this.data.availabilitySaving) return
+    const index = Number(event.detail.value), date = this.data.availabilityDates[index]
+    const room = getRoom(this.roomId), member = room && room.members.find((m) => m.id === room.currentMemberId)
+    if (!date || !member) return
+    this.setData({ availabilityDate: date, availabilityDateIndex: index,
+      availabilityDraft: (getDateAvailability(member, date, room.meetingDate) || []).map((r) => ({ ...r })) })
+  },
+  markUnavailable() {
+    if (this.data.availabilitySaving) return
+    this.setData({ availabilityDraft: [] })
+    return this.saveAvailability()
   },
   closeAvailabilityModal() {
     this.setData({ showAvailabilityModal: false })
@@ -337,9 +469,10 @@ Page({
     this.setData({ availabilityDraft: this.data.availabilityDraft.filter((_, i) => i !== index) })
   },
   saveAvailability() {
+    if (!this.canEditRoom()) return
     if (this.data.availabilitySaving) return
     this.setData({ availabilitySaving: true })
-    updateMyAvailability(this.roomId, this.data.availabilityDraft).then(() => {
+    return updateMyAvailability(this.roomId, this.data.availabilityDraft, this.data.availabilityDate).then(() => {
       this.setData({ availabilitySaving: false, showAvailabilityModal: false })
       this.loadRoom(true)
       wx.showToast({ title: '可用时间已保存', icon: 'success' })
@@ -349,14 +482,16 @@ Page({
     })
   },
   confirmSuggestedTime(event) {
+    if (!this.canEditRoom()) return
     const room = getRoom(this.roomId)
     const time = event.currentTarget.dataset.time
-    if (!room || !room.currentUserIsOwner || !this.data.timeSuggestions.some((item) => item.start === time)) return
-    wx.showModal({ title: '确定聚会时间', content: `确定 ${room.meetingDate} ${time} 见面吗？`,
+    const date = event.currentTarget.dataset.date
+    if (!room || !room.currentUserIsOwner || !this.data.timeSuggestions.some((item) => item.start === time && item.date === date)) return
+    wx.showModal({ title: '确定聚会时间', content: `确定 ${date} ${time} 见面，聚会 ${room.durationMinutes || 60} 分钟吗？`,
       success: (choice) => {
         if (!choice.confirm) return
         wx.showLoading({ title: '正在保存时间' })
-        setMeetingTime(room, time).then(() => {
+        setMeetingTime(room, time, date).then(() => {
           wx.hideLoading()
           this.loadRoom(true).then(() => this.refreshNearby())
           wx.showToast({ title: '时间已确定', icon: 'success' })
@@ -368,8 +503,9 @@ Page({
     })
   },
   confirmSelectedVenue() {
+    if (!this.canEditRoom()) return
     const room = getRoom(this.roomId)
-    const venue = room && (room.venues || []).find((item) => item.id === this.data.selectedVenueId)
+    const venue = room && getRoomCandidates(room).find((item) => item.id === this.data.selectedVenueId)
     if (!room || !room.currentUserIsOwner || !venue) return
     wx.showModal({
       title: room.finalVenue ? '重新确定地点' : '确定聚会地点',
@@ -401,6 +537,7 @@ Page({
     wx.navigateTo({ url: `/pages/place/place?roomId=${this.roomId}&venueId=${event.currentTarget.dataset.id}` })
   },
   toggleVote(event) {
+    if (!this.canEditRoom()) return
     const venueId = event.currentTarget.dataset.id
     if (this.votingVenueId) return
     const room = getRoom(this.roomId)
@@ -433,11 +570,13 @@ Page({
     wx.showToast({ title: hasVoted ? '已取消投票' : '已投给这个地点', icon: 'none' })
   },
   openJoinModal() {
+    if (!this.canEditRoom()) return
     this.setData({ showJoinModal: true, editingMember: false, joinName: '', joinClaimCode: '',
       joinLocationName: '', joinLatitude: null, joinLongitude: null,
       joinTransport: 'transit', joinBudget: 100, joinApproximate: false })
   },
   openEditMember() {
+    if (!this.canEditRoom()) return
     const room = getRoom(this.roomId)
     const member = room && room.members.find((item) => item.id === room.currentMemberId)
     if (!member) return
@@ -462,6 +601,7 @@ Page({
     this.setData({ joinClaimCode: event.detail.value.slice(0, 16) })
   },
   issueClaimCode(event) {
+    if (!this.canEditRoom()) return
     const room = getRoom(this.roomId)
     const memberId = event.currentTarget.dataset.id
     const member = room.members.find((item) => item.id === memberId)
@@ -526,6 +666,7 @@ Page({
     this.setData({ joinApproximate: event.detail.value })
   },
   submitJoin() {
+    if (!this.canEditRoom()) return
     if (this.data.joinSubmitting) return
     const name = this.data.joinName.trim()
     if (!name) {
@@ -573,6 +714,26 @@ Page({
       this.setData({ joinSubmitting: false })
       wx.showToast({ title: error.message || '加入失败', icon: 'none' })
     })
+  },
+  canEditRoom() {
+    const room = getRoom(this.roomId)
+    return Boolean(room && !room.endedAt)
+  },
+  endCurrentRoom() {
+    const room = getRoom(this.roomId)
+    if (!room || !room.currentUserIsOwner || room.endedAt || this.data.endingRoom) return
+    wx.showModal({ title: '结束本次聚会', content: '结束后无法再加入、修改或投票。结束不等于删除位置：数据仍按原保留期限删除，也可主动删除整个聚会。', success: (choice) => {
+      if (!choice.confirm || this.data.endingRoom) return
+      this.setData({ endingRoom: true })
+      endRoom(this.roomId).then(() => this.loadRoom(true))
+        .catch((e) => wx.showToast({ title: e.message || '结束失败', icon: 'none' }))
+        .finally(() => this.setData({ endingRoom: false }))
+    } })
+  },
+  repeatRoom() {
+    const room = getRoom(this.roomId)
+    if (!room || room.preview || !(room.currentUserIsOwner || room.members.some((m) => m.id === room.currentMemberId))) return
+    wx.navigateTo({ url: `/pages/create/create?repeatFrom=${encodeURIComponent(room.id)}` })
   },
   inviteFriends() {
     wx.showModal({ title: '邀请朋友', content: '右上角"···"可将聚会分享给朋友。朋友打开链接后可以加入聚会并提交位置。', showCancel: false, confirmText: '知道了' })

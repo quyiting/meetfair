@@ -212,7 +212,7 @@ function cloudToggleVote(room, venueId) {
 function cloudSetVenues(room, venues, venueSource, routeMatrix) {
   if (!room.cloudId) return Promise.resolve(null)
   return callRoomService('setVenues', { code: room.cloudId, memberRevision: room.memberRevision || 0,
-    meetingTime: room.meetingTime || '', venues, venueSource, routeMatrix }).then((result) => {
+    meetingDate: room.meetingDate || '', meetingTime: room.meetingTime || '', venues, venueSource, routeMatrix }).then((result) => {
     const syncedRoom = Object.assign({}, result.room, {
       cloudId: result.code,
       currentMemberId: result.viewerMemberId || room.currentMemberId || '',
@@ -225,16 +225,23 @@ function cloudSetVenues(room, venues, venueSource, routeMatrix) {
   })
 }
 
-function updateMyAvailability(roomId, availability) {
+function dateAvailability(member, legacyDate) {
+  return member.availabilityByDate || (member.availability && member.availability.length ? { [legacyDate]: member.availability } : {})
+}
+
+function updateMyAvailability(roomId, availability, date) {
   const room = getRoom(roomId)
   if (!room || !room.currentMemberId) return Promise.reject(new Error('请先加入聚会'))
+  date = date || room.meetingDate
+  if (!(room.candidateDates || [room.meetingDate]).includes(date)) return Promise.reject(new Error('请选择候选日期'))
   if (!room.cloudId) {
     room.members = room.members.map((item) => item.id === room.currentMemberId
-      ? Object.assign({}, item, { availability }) : item)
+      ? Object.assign({}, item, { availabilityByDate: { ...dateAvailability(item, room.meetingDate), [date]: availability },
+        ...(date === room.meetingDate ? { availability } : {}) }) : item)
     updateRoom(room)
     return Promise.resolve(room)
   }
-  return callRoomService('updateAvailability', { code: room.cloudId, availability }).then((result) => {
+  return callRoomService('updateAvailability', { code: room.cloudId, availability, date }).then((result) => {
     const syncedRoom = Object.assign({}, result.room, {
       cloudId: result.code, currentMemberId: result.viewerMemberId,
       currentUserIsOwner: Boolean(result.isOwner),
@@ -245,8 +252,14 @@ function updateMyAvailability(roomId, availability) {
   })
 }
 
-function setMeetingTime(room, time) {
+function setMeetingTime(room, time, date = room.meetingDate) {
   if (!room.cloudId) {
+    room.members = room.members.map((m) => {
+      const availabilityByDate = dateAvailability(m, room.meetingDate)
+      return { ...m, availabilityByDate, availability: availabilityByDate[date] || [] }
+    })
+    room.meetingSearchDate = room.meetingSearchDate || room.meetingDate
+    room.meetingDate = date
     room.meetingSearchTime = room.meetingSearchTime || room.meetingTime || ''
     room.meetingTime = time
     room.dateText = room.meetingDate + ' ' + time
@@ -255,7 +268,7 @@ function setMeetingTime(room, time) {
     updateRoom(room)
     return Promise.resolve(room)
   }
-  return callRoomService('setMeetingTime', { code: room.cloudId, time }).then((result) => {
+  return callRoomService('setMeetingTime', { code: room.cloudId, time, date }).then((result) => {
     const syncedRoom = Object.assign({}, result.room, {
       cloudId: result.code, currentMemberId: result.viewerMemberId,
       currentUserIsOwner: Boolean(result.isOwner),
@@ -266,9 +279,42 @@ function setMeetingTime(room, time) {
   })
 }
 
+function nominationAction(roomId, action, payload) {
+  const room = getRoom(roomId)
+  if (!room || !room.cloudId) return Promise.reject(new Error('请先同步云端聚会'))
+  return callRoomService(action, { code: room.cloudId, ...payload }).then((result) => {
+    const saved = { ...result.room, cloudId: result.code, currentMemberId: result.viewerMemberId,
+      currentUserIsOwner: Boolean(result.isOwner), signalId: result.signalId || room.signalId || '',
+      claimableMemberIds: room.claimableMemberIds || [] }
+    updateRoom(saved)
+    return { room: saved, venueId: result.venueId }
+  })
+}
+
+function nominateVenue(roomId, venue) { return nominationAction(roomId, 'nominateVenue', { venue }) }
+function endRoom(roomId) { return nominationAction(roomId, 'endRoom', {}).then((result) => result.room) }
+function removeNomination(roomId, venueId) { return nominationAction(roomId, 'removeNomination', { venueId }) }
+function setNominationRoutes(room, venueId, routes) {
+  return nominationAction(room.id, 'setNominationRoutes', { venueId, routes, memberRevision: room.memberRevision || 0,
+    meetingDate: room.meetingDate, meetingTime: room.meetingTime })
+}
+
+function setMyAttendance(roomId, status, planRevision) {
+  const room = getRoom(roomId)
+  if (!room || !room.currentMemberId) return Promise.reject(new Error('请先加入聚会'))
+  if (!room.cloudId) return Promise.reject(new Error('请先同步云端聚会'))
+  return callRoomService('setAttendance', { code: room.cloudId, status, planRevision }).then((result) => {
+    const saved = { ...result.room, cloudId: result.code, currentMemberId: result.viewerMemberId,
+      currentUserIsOwner: Boolean(result.isOwner), signalId: result.signalId || room.signalId || '',
+      claimableMemberIds: room.claimableMemberIds || [] }
+    updateRoom(saved)
+    return saved
+  })
+}
+
 function setFinalVenue(room, venueId) {
   if (!room.cloudId) {
-    const venue = (room.venues || []).find((item) => item.id === venueId)
+    const venue = require('./candidates').getRoomCandidates(room).find((item) => item.id === venueId)
     if (!venue) return Promise.reject(new Error('地点不存在'))
     room.finalVenue = { id: venue.id, name: venue.name, address: venue.address,
       latitude: venue.latitude, longitude: venue.longitude }
@@ -526,6 +572,9 @@ module.exports = {
   updateMyAvailability,
   setMeetingTime,
   setFinalVenue,
+  setMyAttendance,
+  nominateVenue, removeNomination, setNominationRoutes,
+  endRoom,
   cloudLeaveRoom,
   cloudDeleteRoom
 }

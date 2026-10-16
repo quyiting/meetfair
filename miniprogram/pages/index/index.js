@@ -1,5 +1,6 @@
 const { getRooms, getRoom, createRoom, decodeRoom, cloudGetRoom, cloudErrorText } = require('../../utils/store')
 const { CATEGORY_LABELS, TRANSPORT_LABELS } = require('../../utils/constants')
+const { getRoomState } = require('../../utils/room-state')
 
 // 6 位短码（云端聚会码）；更短的才可能是本地长码，用长度即可区分
 const SHORT_CODE_PATTERN = /^[23456789ABCDEFGHKMNPQRSTUVWXYZ]{6}$/
@@ -7,6 +8,8 @@ const SHORT_CODE_PATTERN = /^[23456789ABCDEFGHKMNPQRSTUVWXYZ]{6}$/
 Page({
   data: {
     rooms: [],
+    selectedFilter: 'all', allRooms: [],
+    filters: [{ id: 'all', label: '全部' }, { id: 'needsInput', label: '待填写' }, { id: 'deciding', label: '协商中' }, { id: 'confirmed', label: '已确定' }, { id: 'ended', label: '已结束' }],
     showJoinCodeModal: false,
     joinCode: '',
     joining: false
@@ -15,9 +18,17 @@ Page({
     const rooms = getRooms().map((room) => Object.assign({}, room, {
       categoryLabel: CATEGORY_LABELS[room.category],
       transportLabel: TRANSPORT_LABELS[room.transport],
-      memberCount: room.preview ? room.memberCount : room.members.length
+      memberCount: room.preview ? room.memberCount : room.members.length,
+      roomState: getRoomState(room)
     }))
-    this.setData({ rooms })
+    this.setData({ allRooms: rooms })
+    this.applyFilter()
+  },
+  selectFilter(event) { this.setData({ selectedFilter: event.currentTarget.dataset.id }); this.applyFilter() },
+  applyFilter() {
+    const filter = this.data.selectedFilter
+    this.setData({ rooms: this.data.allRooms.filter((r) => filter === 'all' ||
+      (filter === 'needsInput' ? r.roomState.needsInput : r.roomState.status === filter)) })
   },
   goCreate() {
     wx.navigateTo({ url: '/pages/create/create' })

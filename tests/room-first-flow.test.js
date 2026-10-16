@@ -79,6 +79,7 @@ function tapInsideDialog(page, dialogIndex, closeHandler) {
 }
 
 async function run() {
+  stored = [room([])]
   const form = page()
   form.openJoinModal()
   tapInsideDialog(form, 0, 'closeJoinModal')

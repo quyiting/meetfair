@@ -22,11 +22,15 @@
     <view class="step"><text class="step-number">03</text><text>推荐并投票</text></view>
   </view>
 
-  <view wx:if="{{rooms.length}}" class="my-section">
+  <view wx:if="{{allRooms.length}}" class="my-section">
     <view class="section-title">我的聚会</view>
+    <view class="room-meta">状态来自本机最近同步记录，以打开房间后的状态为准。</view>
+    <view class="status-filters"><button wx:for="{{filters}}" wx:key="id" size="mini" class="{{selectedFilter === item.id ? 'filter-active' : ''}}" bindtap="selectFilter" data-id="{{item.id}}">{{item.label}}</button></view>
+    <view wx:if="{{!rooms.length}}" class="room-meta">暂无符合条件的聚会</view>
     <view class="room-list">
       <view class="room-card card" wx:for="{{rooms}}" wx:key="id" bindtap="openRoom" data-id="{{item.id}}">
         <view class="room-card-head"><view><view class="room-title">{{item.title}}</view><view class="room-meta">{{item.categoryLabel}} · {{item.transportLabel}}</view></view><view class="room-arrow">›</view></view>
+        <view class="room-meta">{{item.roomState.label}}{{item.roomState.needsInput ? ' · 有待填写信息' : ''}}</view>
         <view class="member-row"><view class="mini-avatars"><text class="mini-avatar" wx:for="{{item.members}}" wx:key="id" style="background: {{item.color}}">{{item.shortName}}</text></view><text>{{item.memberCount}} 人已加入</text></view>
       </view>
     </view>

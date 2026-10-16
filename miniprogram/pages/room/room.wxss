@@ -21,3 +21,16 @@
 .waiting-progress { background: #edf3ff; border-radius: 999rpx; color: #285fdb; font-size: 24rpx; font-weight: 800; padding: 12rpx 24rpx; }
 .join-full-room { margin: 0 0 20rpx; }
 .waiting-card .empty-action, .room-share-secondary { background: #edf3ff; color: #285fdb; }
+.collection-progress-card { margin-bottom: 20rpx; padding: 28rpx; }
+.collection-progress-card .section-title { font-size: 30rpx; }
+.progress-expected { color: #536178; font-size: 23rpx; margin-top: 12rpx; }
+.progress-summary { display: flex; flex-wrap: wrap; gap: 12rpx 28rpx; margin-top: 18rpx; color: #536178; font-size: 24rpx; }
+.progress-number { color: #245ce9; font-size: 34rpx; font-weight: 800; }
+.progress-hint { color: #65728b; font-size: 22rpx; line-height: 1.6; margin-top: 14rpx; }
+.progress-member-list { border-top: 1rpx solid #e8edf5; margin-top: 18rpx; }
+.progress-member-row { align-items: center; display: flex; gap: 12rpx; justify-content: space-between; padding-top: 14rpx; }
+.progress-member-name { color: #26334d; font-size: 24rpx; min-width: 0; overflow-wrap: anywhere; }
+.progress-member-status { display: flex; flex-wrap: wrap; flex-shrink: 0; gap: 12rpx; color: #536178; font-size: 21rpx; }
+.progress-time-done { color: #24735c; }
+.progress-time-pending { color: #8a531c; }
+.progress-next-button { background: #1f5eff; border-radius: 14rpx; color: #fff; font-size: 25rpx; font-weight: 700; line-height: 82rpx; margin-top: 22rpx; padding: 0 16rpx; }

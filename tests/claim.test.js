@@ -37,6 +37,7 @@ const collection = {
   }
 }
 const db = {
+  command: { set: (value) => value },
   collection(name) { return name === 'roomSignals' ? signalCollection : collection },
   async createCollection() {},
   async runTransaction(callback) { return callback({ collection: () => collection }) }
@@ -63,6 +64,7 @@ const room = { id: 'room-1', title: '聚会', category: 'food', meetingDate: '20
 async function run() {
   const created = await roomService.main({ action: 'create', room })
   assert.strictEqual(created.ok, true)
+  assert.strictEqual(created.room.expectedMemberCount, 0, '旧版建房请求默认人数不确定')
   const invalidCreate = await roomService.main({ action: 'create', room: Object.assign({}, room, {
     id: 'invalid-room', venues: [{ id: 'bad', category: 'food', name: '错误', latitude: 999, longitude: 121 }]
   }) })
@@ -192,8 +194,15 @@ async function run() {
   openid = 'fresh-owner'
   const emptyRoom = {
     id: 'room-empty-v2', schemaVersion: 2, title: '先建房', category: 'food',
+    expectedMemberCount: 5,
     meetingDate: '2026-10-12', meetingTime: '18:30', dateText: '2026-10-12 18:30',
     members: [], venues: [], routeMatrix: {}
+  }
+  for (const expectedMemberCount of [1, 9, 2.5, '5', null]) {
+    const invalidExpected = await roomService.main({ action: 'create', room: Object.assign({}, emptyRoom, {
+      id: 'invalid-expected', expectedMemberCount
+    }) })
+    assert.strictEqual(invalidExpected.ok, false, '云端必须拒绝非法预计人数：' + expectedMemberCount)
   }
   const emptyCreated = await roomService.main({ action: 'create', room: emptyRoom })
   assert.strictEqual(emptyCreated.ok, true, '新版房间应允许创建者暂不填写位置')
@@ -201,6 +210,7 @@ async function run() {
   assert.deepStrictEqual(emptyCreated.room.members, [])
   assert.deepStrictEqual(emptyCreated.room.venues, [])
   assert.strictEqual(emptyCreated.room.schemaVersion, 2)
+  assert.strictEqual(emptyCreated.room.expectedMemberCount, 5)
   const emptyDoc = docs.find((item) => item.code === emptyCreated.code)
   assert.deepStrictEqual(emptyDoc.memberBindings, [])
   assert.strictEqual((await roomService.main({ action: 'create', room: emptyRoom })).code, emptyCreated.code)
@@ -233,6 +243,7 @@ async function run() {
   assert.strictEqual(ownerJoined.signalId, emptyCreated.signalId, '房主提交位置后沿用原实时信号')
   assert.strictEqual(ownerJoined.room.members.length, 2)
   assert.strictEqual(ownerJoined.autoRecommendNow, true)
+  assert.strictEqual(ownerJoined.room.expectedMemberCount, 5, '预计人数未到齐仍应触发两人首次推荐')
 
   openid = 'another-stranger'
   const joinedPreview = await roomService.main({ action: 'get', code: emptyCreated.code })
