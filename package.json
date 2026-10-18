@@ -3,7 +3,7 @@
   "description": "为多人聚会推荐通勤更公平的地点和时间",
   "private": true,
   "license": "MIT",
-  "repository": "github:quyiting/meetfair-wechat-miniapp",
+  "repository": "github:quyiting/meetfair",
   "engines": {
     "node": ">=20"
   },
