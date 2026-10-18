@@ -1,6 +1,6 @@
 # MeetFair · 聚点
 
-[![CI](https://github.com/quyiting/meetfair-wechat-miniapp/actions/workflows/ci.yml/badge.svg)](https://github.com/quyiting/meetfair-wechat-miniapp/actions/workflows/ci.yml)
+[![CI](https://github.com/quyiting/meetfair/actions/workflows/ci.yml/badge.svg)](https://github.com/quyiting/meetfair/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 一个原生微信小程序：先创建聚会并邀请，再由 2–8 位参与者各自提交位置，推荐整体通勤更公平的聚会地点与时间。
@@ -80,8 +80,8 @@
 ### 本地运行
 
 ```bash
-git clone https://github.com/quyiting/meetfair-wechat-miniapp.git
-cd meetfair-wechat-miniapp
+git clone https://github.com/quyiting/meetfair.git
+cd meetfair
 npm test
 ```
 
