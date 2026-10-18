@@ -34,6 +34,7 @@ Page({
   },
   toggleVote() {
     const room = getRoom(this.roomId)
+    if (!room || room.endedAt) return
     const voterId = room.currentMemberId
     if (!voterId) {
       wx.showToast({ title: '请先加入聚会', icon: 'none' })

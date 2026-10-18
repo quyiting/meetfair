@@ -24,7 +24,7 @@
   </view>
 
   <view class="form-block">
-    <view class="field-label">聚会时间</view>
+    <view class="field-label">候选日期与期望时间</view>
     <view class="meeting-time-row">
       <picker mode="date" value="{{meetingDate}}" start="{{minDate}}" bindchange="selectMeetingDate">
         <view class="meeting-time-picker">{{meetingDate}}</view>
@@ -33,6 +33,20 @@
         <view class="meeting-time-picker">{{meetingTime}}</view>
       </picker>
     </view>
+    <view wx:for="{{candidateDates}}" wx:key="*this" class="meeting-time-row">
+      <text>{{item}}</text><button wx:if="{{candidateDates.length > 1}}" size="mini" bindtap="removeCandidateDate" data-date="{{item}}">移除</button>
+    </view>
+    <picker wx:if="{{candidateDates.length < 3}}" mode="date" start="{{minDate}}" bindchange="addCandidateDate"><view class="meeting-time-picker">＋ 添加候选日期（最多 3 天）</view></picker>
+    <view class="field-label">聚会时长</view>
+    <picker range="{{durationOptions}}" value="{{durationIndex}}" bindchange="selectDuration"><view class="meeting-time-picker">{{durationOptions[durationIndex]}}</view></picker>
+  </view>
+
+  <view class="form-block">
+    <view class="field-label">预计人数（选填）</view>
+    <picker mode="selector" range="{{expectedMemberOptions}}" range-key="label" value="{{expectedMemberIndex}}" bindchange="selectExpectedMemberCount" aria-label="预计人数，含自己">
+      <view class="meeting-time-picker">{{expectedMemberOptions[expectedMemberIndex].label}}</view>
+    </picker>
+    <view class="prototype-tip">仅用于提示填写进度，不限制加入；满 2 人提交位置即可先看推荐。</view>
   </view>
 
   <view class="form-block">

@@ -5,6 +5,7 @@ let shouldFail = false
 let createCalls = 0
 let redirect = ''
 const requestedIds = []
+const expectedCounts = []
 const toasts = []
 global.wx = {
   getStorageSync: () => stored,
@@ -19,7 +20,14 @@ global.wx = {
       assert.strictEqual(data.room.schemaVersion, 2)
       assert.deepStrictEqual(data.room.members, [])
       assert.deepStrictEqual(data.room.venues, [])
+      assert.strictEqual(data.room.candidateDates[0], data.room.meetingDate)
+      assert([60, 120, 180].includes(data.room.durationMinutes))
+      if (data.room.id === 'planned-room') {
+        assert.strictEqual(data.room.candidateDates.length, 3)
+        assert.strictEqual(data.room.durationMinutes, 120)
+      }
       requestedIds.push(data.room.id)
+      expectedCounts.push(data.room.expectedMemberCount)
       createCalls++
       if (shouldFail) fail({ errMsg: 'network unavailable' })
       else success({ result: { ok: true, code: 'ABC234', room: data.room, viewerMemberId: '', isOwner: true } })
@@ -45,6 +53,20 @@ async function run() {
   assert.strictEqual(getRooms()[0].cloudId, 'ABC234')
   assert.strictEqual(getRooms()[0].currentMemberId, '')
   assert.strictEqual(redirect, `/pages/room/room?id=${getRooms()[0].id}`)
+  assert.strictEqual(expectedCounts[0], 0, '默认预计人数应为不确定')
+
+  const planned = page()
+  planned.addCandidateDate({ detail: { value: '2099-10-20' } })
+  planned.addCandidateDate({ detail: { value: '2099-10-21' } })
+  planned.selectDuration({ detail: { value: '1' } })
+  assert.strictEqual(planned.data.candidateDates.length, 3)
+  assert.strictEqual(planned.data.durationMinutes, 120)
+  planned.selectExpectedMemberCount({ detail: { value: '4' } })
+  planned.pendingRoomId = 'planned-room'
+  await planned.createRoom()
+  assert.strictEqual(expectedCounts[1], 5, '预计人数应随建房请求保存')
+  planned.selectExpectedMemberCount({ detail: { value: '0' } })
+  assert.strictEqual(planned.pendingRoomId, '', '修改预计人数后应视作新的建房意图')
 
   stored = []
   redirect = ''
@@ -57,7 +79,7 @@ async function run() {
   assert(toasts.some((text) => /网络|云服务/.test(text)))
   shouldFail = false
   await failed.createRoom()
-  assert.strictEqual(requestedIds[1], requestedIds[2], '同一表单重试必须沿用相同建房 ID')
+  assert.strictEqual(requestedIds[2], requestedIds[3], '同一表单重试必须沿用相同建房 ID')
   assert.strictEqual(getRooms().length, 1)
   stored = []
   shouldFail = true

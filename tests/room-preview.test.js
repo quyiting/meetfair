@@ -44,7 +44,7 @@ async function run() {
 
   require('../miniprogram/pages/index/index')
   const indexPage = Object.assign({}, global.roomPage, {
-    data: {}, setData(values) { Object.assign(this.data, values) }
+    data: JSON.parse(JSON.stringify(global.roomPage.data)), setData(values) { Object.assign(this.data, values) }
   })
   indexPage.onShow()
   assert.strictEqual(indexPage.data.rooms[0].memberCount, 2, '首页应显示摘要中的真实人数')
@@ -80,13 +80,16 @@ async function run() {
   wx.cloud = { callFunction({ fail }) { fail({ errMsg: 'network unavailable' }) } }
   wx.showToast = () => {}
   const cachedPage = Object.assign({}, page, {
-    data: Object.assign({}, page.data, { room: stored[0] }),
+    data: Object.assign({}, page.data, { room: stored[0], collectionProgress: {
+      members: [{ id: 'private', name: '小李', timeSubmitted: false }]
+    } }),
     roomId: 'cached-full'
   })
   await cachedPage.loadRoom()
   assert.strictEqual(cachedPage.data.room, null, '云端校验失败时不能展示缓存的成员位置')
   assert.match(cachedPage.data.loadError, /网络或云服务暂时不可用/)
   assert.deepStrictEqual(cachedPage.data.markers, [])
+  assert.strictEqual(cachedPage.data.collectionProgress, null, '云端校验失败必须同时清除成员填写状态')
   const localRoom = { id: 'local-room', currentUserIsOwner: true, members: [{ id: 'owner' }] }
   stored = [localRoom]
   assert.strictEqual(await cloudCreateRoom(localRoom), null)

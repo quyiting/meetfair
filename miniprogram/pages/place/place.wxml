@@ -23,6 +23,6 @@
       </view>
     </view>
 
-    <view class="bottom-actions"><button class="nav-button" bindtap="openNavigation">导航去这里</button><button class="vote-large {{venue.hasVoted ? 'voted' : ''}}" bindtap="toggleVote">{{venue.voteButtonText}} {{venue.voteSuffix}}</button></view>
+    <view class="bottom-actions"><button class="nav-button" bindtap="openNavigation">导航去这里</button><button wx:if="{{!room.endedAt}}" class="vote-large {{venue.hasVoted ? 'voted' : ''}}" bindtap="toggleVote">{{venue.voteButtonText}} {{venue.voteSuffix}}</button></view>
   </view>
 </view>

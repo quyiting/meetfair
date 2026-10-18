@@ -76,7 +76,8 @@ function clampScore(value) {
 }
 
 function recommendVenues(room, category, goal = 'max') {
-  const venues = category === 'all' ? room.venues : room.venues.filter((venue) => venue.category === category)
+  const candidates = require('./candidates').getRoomCandidates(room)
+  const venues = category === 'all' ? candidates : candidates.filter((venue) => venue.category === category)
   return venues.map((venue) => {
     const travel = room.members.map((member) => {
       const distance = distanceKm(member, venue)
