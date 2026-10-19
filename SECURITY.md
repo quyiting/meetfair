@@ -2,7 +2,7 @@
 
 ## 报告安全问题
 
-请不要为安全漏洞创建公开 Issue。优先通过本仓库 GitHub 页面中的 **Security** 入口私下报告；若该入口不可用，请先通过维护者的 GitHub 主页建立私下联系。
+请不要为安全漏洞创建公开 Issue。前往本仓库的 [Advisories 页面](https://github.com/quyiting/meetup-coordinator/security/advisories)，点击 **Report a vulnerability** 私下提交报告。
 
 报告中请包含：
 
