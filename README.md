@@ -1,9 +1,11 @@
-# MeetFair · 聚点
+# 约在哪 · Where to Meet
 
-[![CI](https://github.com/quyiting/meetfair-wechat-miniapp/actions/workflows/ci.yml/badge.svg)](https://github.com/quyiting/meetfair-wechat-miniapp/actions/workflows/ci.yml)
+[![CI](https://github.com/quyiting/meetup-coordinator/actions/workflows/ci.yml/badge.svg)](https://github.com/quyiting/meetup-coordinator/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 一个原生微信小程序：先创建聚会并邀请，再由 2–8 位参与者各自提交位置，推荐整体通勤更公平的聚会地点与时间。
+
+Where to Meet is a native WeChat Mini Program for coordinating meetup times and places while considering everyone's commute.
 
 > 当前项目处于 MVP 阶段，适合学习、试用和二次开发；上线前请完成隐私合规、数据库权限和真机验收。
 
@@ -14,7 +16,9 @@
 - 发起人无需先填写位置即可创建云端房间，通过小程序链接或 6 位码邀请朋友；参与者各自填写位置、交通方式和预算。
 - 支持当前位置、手动选点和地址近似定位。
 - 按“照顾最远的人”“全员总时间最短”“大家时间最接近”三种目标生成建议。
+- 聚会页按“地点 / 时间 / 成员”分组；推荐先显示 8 个，点击“查看更多”分批展开已获取的候选，不增加地图请求。卡片突出当前排序对应的通勤指标，地图可折叠，详细信息与路线在地点详情查看。
 - 可接入腾讯位置服务或高德 Web 服务获取候选地点和路线；路线服务不可用时标记估算结果。
+- 地点详情提供“我的路线”：按本人已填写的出发点，预览公交、驾车、步行或骑行路线；支持路线折线、分段说明及最多 3 个备选方案切换（实际数量取决于接口返回）。
 - 创建时选择 1–3 个候选日期和 1／2／3 小时聚会时长；成员逐日期填写可用时间或明确标记“这天没空”，按完整聚会时长给出日期与时间建议。
 - 创建时可选填预计人数（2–8 人，含自己，默认不确定）；房间顶部展示位置和时间填写进度、已提交成员的状态，并引导当前用户完成下一步。预计人数仅作参考，不改变两人即可开始推荐的规则。
 - 成员可修改自己的位置和出行信息；创建者可确认最终地点与时间。
@@ -52,6 +56,16 @@
 
 尚未接入团购券、实时优惠、电影排片、票价或购票。地图价格与评分不能当作实际交易报价，营业状态也仅供参考。预算缺失时不会编造人均消费；“安静、包间、停车”等偏好仅在地点资料有明确线索时辅助同等通勤候选的排序。
 
+### 个人路线预览
+
+在地点详情点击“查看我的路线”，使用自己已提交的出发点按当前出发时间规划。切换方式只影响本次预览，不更改房间内的出行偏好；公交展示步行及乘车段、上下车站和接口返回的站数。路线数据来自腾讯位置服务或高德，页面展示实际来源，地图底图由微信原生地图组件提供。
+
+该功能需要重新上传整个 `cloudfunctions/venueService` 目录（包括 `route-preview.js`）。配置了 `AMAP_KEY` 时使用高德及按需配置的 `AMAP_SK`，公交需路径规划与逆地理编码权限；否则复用 `QQ_MAP_KEY` / `QQ_MAP_SK` 调用腾讯路线规划，无需另配高德 Key。高德公交会分别解析起终点城市，腾讯坐标点串在云端解压并统一为页面数据。同一实例内相同路线请求合并并缓存 1 分钟，失败结果不缓存。详情页不会自动查询，切换已返回的备选路线也不会新增地图请求。
+
+路线仅保存在当前页面及短期云实例缓存，不写入房间或持久化本地存储；使用大致位置时会提示起点偏差。轨迹缺失时展示说明，不以两点直线冒充实际路线。它是出发前预览，不包含持续定位、实时偏航重算、语音播报或到站提醒；“导航去这里”仍打开微信地图导航入口。
+
+接口依据：[腾讯官方路线接口说明](https://github.com/TencentLBS/tencentmap-webservice-skill/blob/main/references/api-direction.md)、[高德路径规划 2.0](https://lbs.amap.com/api/webservice/guide/api/newroute)、[逆地理编码](https://lbs.amap.com/api/webservice/guide/api/georegeo)。云端与手机验收进度见[路线预览验收记录](tasks/verification-2026-10-17.md)。
+
 ## 推荐逻辑
 
 推荐会综合参与者到候选地点的路线时间，并按所选目标排序：
@@ -80,8 +94,8 @@
 ### 本地运行
 
 ```bash
-git clone https://github.com/quyiting/meetfair-wechat-miniapp.git
-cd meetfair-wechat-miniapp
+git clone https://github.com/quyiting/meetup-coordinator.git
+cd meetup-coordinator
 npm test
 ```
 
@@ -179,7 +193,7 @@ find miniprogram cloudfunctions tests -name '*.js' -print0 | xargs -0 -n1 node -
 git diff --check
 ```
 
-当前 `npm test` 包含 27 个测试脚本，覆盖先建房后加入、填写进度、多日期与完整时长、方案版本和意向、提名去重与刷新保留、结束竞态、再次组织、路线服务和过期清理。测试会模拟微信/云数据库/地图边界，负面用例可能打印预期错误；以进程退出码判断是否通过。
+当前 `npm test` 包含 30 个测试脚本，覆盖先建房后加入、填写进度、多日期与完整时长、方案版本和意向、提名去重与刷新保留、结束竞态、再次组织、路线服务、个人路线预览、推荐分批展示与标签状态和过期清理。测试会模拟微信/云数据库/地图边界，负面用例可能打印预期错误；以进程退出码判断是否通过。
 
 本机已安装微信开发者工具时，可额外运行编译模板回归：
 
