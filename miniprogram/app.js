@@ -1,6 +1,6 @@
 App({
   globalData: {
-    brandName: '聚点',
+    brandName: '约在哪',
     cloudReady: false
   },
   onLaunch() {

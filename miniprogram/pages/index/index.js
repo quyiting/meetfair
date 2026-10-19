@@ -100,7 +100,7 @@ Page({
   },
   onShareAppMessage() {
     return {
-      title: '聚点：一起找个大家都顺路的地方吧',
+      title: '约在哪：一起找个大家都顺路的地方吧',
       path: '/pages/index/index'
     }
   }

@@ -1,6 +1,6 @@
 {
   "miniprogramRoot": "miniprogram/",
-  "projectname": "meetfair",
+  "projectname": "约在哪",
   "description": "为朋友聚会寻找更公平的地点",
   "appid": "wx88f11b62e6a162ef",
   "cloudfunctionRoot": "cloudfunctions/",

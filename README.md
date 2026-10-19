@@ -1,9 +1,11 @@
-# MeetFair · 聚点
+# 约在哪 · Where to Meet
 
-[![CI](https://github.com/quyiting/meetfair/actions/workflows/ci.yml/badge.svg)](https://github.com/quyiting/meetfair/actions/workflows/ci.yml)
+[![CI](https://github.com/quyiting/meetup-coordinator/actions/workflows/ci.yml/badge.svg)](https://github.com/quyiting/meetup-coordinator/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 一个原生微信小程序：先创建聚会并邀请，再由 2–8 位参与者各自提交位置，推荐整体通勤更公平的聚会地点与时间。
+
+Where to Meet is a native WeChat Mini Program for coordinating meetup times and places while considering everyone's commute.
 
 > 当前项目处于 MVP 阶段，适合学习、试用和二次开发；上线前请完成隐私合规、数据库权限和真机验收。
 
@@ -80,8 +82,8 @@
 ### 本地运行
 
 ```bash
-git clone https://github.com/quyiting/meetfair.git
-cd meetfair
+git clone https://github.com/quyiting/meetup-coordinator.git
+cd meetup-coordinator
 npm test
 ```
 
