@@ -1,9 +1,9 @@
 {
-  "name": "meetfair-miniprogram",
+  "name": "meetup-coordinator-miniprogram",
   "description": "为多人聚会推荐通勤更公平的地点和时间",
   "private": true,
   "license": "MIT",
-  "repository": "github:quyiting/meetfair",
+  "repository": "github:quyiting/meetup-coordinator",
   "engines": {
     "node": ">=20"
   },

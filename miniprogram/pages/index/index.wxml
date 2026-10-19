@@ -1,6 +1,6 @@
 <view class="page-shell home-page">
   <view class="topbar">
-    <view class="brand"><view class="brand-dot"></view><text>聚点</text></view>
+    <view class="brand"><view class="brand-dot"></view><text>约在哪</text></view>
     <view class="brand-note">让见面更公平</view>
   </view>
 
