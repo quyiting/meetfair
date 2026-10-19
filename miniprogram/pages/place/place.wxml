@@ -1,12 +1,42 @@
 <view wx:if="{{venue}}" class="place-page">
-  <map class="place-map" latitude="{{venue.latitude}}" longitude="{{venue.longitude}}" scale="14" markers="{{markers}}"></map>
+  <map id="place-map" class="place-map {{routeOpened ? 'route-map' : ''}}" latitude="{{venue.latitude}}" longitude="{{venue.longitude}}" scale="14" markers="{{markers}}" polyline="{{polylines}}" include-points="{{mapPoints}}" show-location="{{false}}"></map>
   <view class="page-shell place-shell">
     <view class="place-heading">
       <view><view class="tag">公平推荐</view><view class="place-name">{{venue.name}}</view><view class="place-meta">{{venue.metaText}}</view></view>
       <view class="fair-badge"><text>{{venue.fairness}}</text><text>推荐</text></view>
     </view>
     <view class="address"><text class="address-icon">⌖</text><text>{{venue.address}}</text></view>
+    <view class="route-card card">
+      <view class="section-title">我的路线</view>
+      <view class="route-hint">从你已填写的出发点前往这里，按当前出发时间规划。</view>
+      <view wx:if="{{approximateStart}}" class="route-hint">你使用的是大致位置，起点与实际位置可能有偏差。</view>
+      <view wx:if="{{!canPreviewRoute}}" class="route-hint">返回聚会页填写自己的位置后，即可预览路线。</view>
+      <button wx:elif="{{!routeOpened}}" class="route-primary" bindtap="previewMyRoute">查看我的路线</button>
+      <block wx:else>
+        <view class="route-modes">
+          <button wx:for="{{routeModes}}" wx:key="id" class="route-mode {{routeMode === item.id ? 'selected' : ''}}" data-mode="{{item.id}}" disabled="{{routeStatus === 'loading'}}" bindtap="selectRouteMode">{{item.label}}</button>
+        </view>
+        <view wx:if="{{routeStatus === 'loading'}}" class="route-state">正在规划路线…</view>
+        <view wx:elif="{{routeStatus === 'error'}}" class="route-state">
+          <view>{{routeError}}</view><button class="route-retry" bindtap="previewMyRoute">重新查询</button>
+        </view>
+        <block wx:elif="{{selectedRoute}}">
+          <scroll-view wx:if="{{routes.length > 1}}" scroll-x class="route-options">
+            <button wx:for="{{routes}}" wx:key="id" class="route-option {{selectedRouteIndex === index ? 'selected' : ''}}" data-index="{{index}}" bindtap="selectRoute">方案 {{index + 1}} · {{item.minutes}} 分钟</button>
+          </scroll-view>
+          <view class="route-summary"><text>{{selectedRoute.minutes}} 分钟</text><text>{{selectedRoute.distanceKm}} 公里</text></view>
+          <view class="route-source">路线数据：{{routeSourceLabel}} · 步行为虚线 · 乘车为实线</view>
+          <view wx:if="{{!selectedRoute.geometryComplete}}" class="route-hint">部分路段暂无轨迹，请结合下方说明和地图导航查看。</view>
+          <view wx:for="{{selectedRoute.segments}}" wx:key="index" class="route-step">
+            <text class="route-step-number">{{index + 1}}</text>
+            <view><view>{{item.label}}</view><view wx:if="{{item.detail}}" class="route-hint">{{item.detail}}</view></view>
+          </view>
+          <button class="route-retry" bindtap="previewMyRoute">更新路线</button>
+        </block>
+      </block>
+    </view>
     <view class="place-note">{{venue.highlight}}</view>
+    <view wx:if="{{venue.preferenceMatchText}}" class="budget-detail">{{venue.preferenceMatchText}}</view>
     <view wx:if="{{venue.budgetStatus}}" class="budget-detail">预算匹配：{{venue.budgetStatus}}</view>
 
     <view class="metrics card">
@@ -16,6 +46,7 @@
     </view>
 
     <view class="section-title travel-title">每个人要走多远</view>
+    <view class="place-note">平均 {{venue.averageMinutes}} 分钟 · 时间差 {{venue.spreadMinutes}} 分钟 · {{venue.routeCoverage}} / {{venue.travel.length}} 人有路线计算，其余为估算</view>
     <view class="travel-list card">
       <view wx:for="{{venue.travel}}" wx:key="memberId" class="travel-row">
         <view class="travel-person"><view class="tiny-avatar">{{item.shortName}}</view><text>{{item.name}}</text></view>
@@ -26,3 +57,4 @@
     <view class="bottom-actions"><button class="nav-button" bindtap="openNavigation">导航去这里</button><button wx:if="{{!room.endedAt}}" class="vote-large {{venue.hasVoted ? 'voted' : ''}}" bindtap="toggleVote">{{venue.voteButtonText}} {{venue.voteSuffix}}</button></view>
   </view>
 </view>
+<view wx:else class="page-shell route-state">地点暂不可用，请返回聚会页刷新后重试。</view>

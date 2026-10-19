@@ -1,5 +1,7 @@
 const crypto = require('crypto')
 const https = require('https')
+const { createRoutePreview } = require('./route-preview')
+const previewRoute = createRoutePreview(requestJson)
 
 const CATEGORY_QUERIES = { food: '餐厅', cinema: '电影院', coffee: '咖啡', fun: 'KTV' }
 const AMAP_CATEGORY_TYPES = { food: '050000', cinema: '080601', coffee: '050500', fun: '080300' }
@@ -277,9 +279,14 @@ async function getRouteMatrix(event) {
 
 exports.main = async (event) => {
   const startedAt = Date.now()
-  const action = event.action === 'routes' ? 'routes' : 'search'
+  const action = ['routes', 'routePreview'].includes(event.action) ? event.action : 'search'
   const provider = process.env.AMAP_KEY ? 'amap' : 'tencent'
   try {
+    if (action === 'routePreview') {
+      const result = await previewRoute(event)
+      logSummary(action, provider, result.ok ? 'ok' : 'unavailable', startedAt)
+      return result
+    }
     if (event.action === 'routes') {
       const result = await getRouteMatrix(event)
       logSummary(action, provider, result.ok ? 'ok' : 'invalid', startedAt,
