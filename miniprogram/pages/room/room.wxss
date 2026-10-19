@@ -34,3 +34,35 @@
 .progress-time-done { color: #24735c; }
 .progress-time-pending { color: #8a531c; }
 .progress-next-button { background: #1f5eff; border-radius: 14rpx; color: #fff; font-size: 25rpx; font-weight: 700; line-height: 82rpx; margin-top: 22rpx; padding: 0 16rpx; }
+.room-progress-overview { align-items: center; color: #536178; display: flex; flex-wrap: wrap; font-size: 24rpx; gap: 8rpx; justify-content: space-between; margin-bottom: 12rpx; }
+.room-progress-overview button { background: transparent; color: #285ee5; font-size: 24rpx; line-height: 88rpx; margin: 0; padding: 0 12rpx; }
+.room-sections { background: #f6f8fc; display: flex; gap: 12rpx; padding: 12rpx 0 20rpx; position: sticky; top: 0; z-index: 10; }
+.room-section { background: #fff; border: 2rpx solid #e6ebf4; border-radius: 14rpx; color: #536178; flex: 1; font-size: 28rpx; line-height: 88rpx; margin: 0; padding: 0; }
+.room-section.section-active { background: #edf3ff; border-bottom: 6rpx solid #1f5eff; border-color: #1f5eff; color: #1f5eff; font-weight: 800; }
+.map-toggle { background: #edf3ff; color: #285ee5; font-size: 24rpx; line-height: 88rpx; margin: 20rpx 0 0; padding: 0 12rpx; white-space: normal; }
+.goal-tabs .category-tab { flex-shrink: 0; }
+.venue-card { padding: 24rpx; }
+.venue-rank { flex-shrink: 0; height: 42rpx; width: 42rpx; }
+.venue-title-row { align-items: flex-start; gap: 12rpx; justify-content: space-between; }
+.venue-name { display: -webkit-box; flex: 1; font-size: 30rpx; line-height: 1.45; max-width: none; white-space: normal; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.venue-selected-label { color: #245ce9; flex-shrink: 0; font-size: 22rpx; line-height: 44rpx; }
+.venue-info, .venue-address { color: #536178; font-size: 24rpx; line-height: 1.6; margin-top: 8rpx; }
+.venue-address { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.travel-summary { align-items: baseline; color: #26334d; display: flex; flex-wrap: wrap; font-size: 24rpx; gap: 8rpx; line-height: 1.6; margin-top: 12rpx; }
+.travel-summary > text { font-size: 30rpx; }
+.travel-summary .estimate-label { background: #f0f3f7; border-radius: 6rpx; color: #65728b; font-size: 21rpx; font-weight: 400; padding: 0 8rpx; }
+.venue-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 8rpx; justify-content: space-between; margin-top: 12rpx; }
+.venue-detail-button { background: transparent; color: #285ee5; font-size: 24rpx; line-height: 88rpx; margin: 0; padding: 0 8rpx; }
+.venue-actions .vote-button { font-size: 24rpx; line-height: 88rpx; margin: 0; padding: 0 20rpx; }
+.recommendation-pagination { color: #536178; font-size: 24rpx; line-height: 1.6; padding: 12rpx 0 24rpx; text-align: center; }
+.recommendation-pagination button { background: #edf3ff; color: #285ee5; font-size: 26rpx; line-height: 88rpx; margin-top: 16rpx; }
+.pagination-end { color: #65728b; font-size: 22rpx; margin-top: 12rpx; }
+.selected-venue-summary { color: #26334d; font-size: 26rpx; line-height: 1.6; overflow-wrap: anywhere; padding: 16rpx 0; }
+.room-progress-overview { flex-wrap: nowrap; }
+.room-progress-overview > text { flex: 1; min-width: 0; }
+.room-page .room-progress-overview button { flex-shrink: 0; min-width: 0; width: auto; }
+.room-section { width: 0; }
+.room-page .map-toggle, .room-page .recommendation-pagination button, .room-page .time-edit-button, .room-page .confirm-venue-button, .room-page .edit-member-button, .room-page .progress-next-button, .room-page .room-share-button { width: 100%; }
+.room-page .venue-detail-button, .room-page .venue-actions .vote-button { min-width: 0; width: auto; }
+.goal-description { font-size: 23rpx; line-height: 1.6; margin-top: 12rpx; }
+.final-venue-actions button { line-height: 88rpx; }

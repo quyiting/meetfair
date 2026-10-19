@@ -20,6 +20,7 @@ const budgets = [
 ]
 
 const SHORT_CODE_PATTERN = /^[23456789ABCDEFGHKMNPQRSTUVWXYZ]{6}$/
+const RECOMMENDATION_BATCH_SIZE = 8
 
 Page({
   data: {
@@ -28,6 +29,9 @@ Page({
     syncingRoom: false,
     point: null,
     recommendations: [],
+    visibleRecommendations: [], visibleCount: RECOMMENDATION_BATCH_SIZE,
+    activeSection: 'places', mapExpanded: false, selectedVenueName: '',
+    sections: [{ id: 'places', label: '地点' }, { id: 'time', label: '时间' }, { id: 'members', label: '成员' }],
     topRecommendationReason: '',
     recommendationsStale: false,
     refreshingNearby: false,
@@ -166,7 +170,7 @@ Page({
     if (room.preview) {
       this.setData({
         room: Object.assign({}, room, { categoryLabel: CATEGORY_LABELS[room.category] }),
-        point: null, recommendations: [], selectedVenueId: '', markers: [],
+        point: null, recommendations: [], visibleRecommendations: [], selectedVenueId: '', selectedVenueName: '', markers: [],
         recommendationsStale: false, timeSuggestions: [], timeResponded: 0, topRecommendationReason: '',
         isMember: false, waitingForMembers: room.schemaVersion === 2 && room.memberCount < 2,
         claimableMembers: [], codePreview: room.cloudId,
@@ -207,9 +211,9 @@ Page({
     if (room.schemaVersion === 2 && room.members.length < 2) {
       this.setData({
         room: Object.assign({}, room, { categoryLabel: CATEGORY_LABELS[room.category] }),
-        point: null, recommendations: [], topRecommendationReason: '',
-        recommendationsStale: false, timeSuggestions: [], timeResponded: 0,
-        selectedVenueId: '', markers: [], isMember, waitingForMembers: true,
+        point: null, recommendations: [], visibleRecommendations: [], topRecommendationReason: '',
+        recommendationsStale: false, timeSuggestions: [], timeResponded: progressMembers.filter((m) => m.timeSubmitted).length,
+        selectedVenueId: '', selectedVenueName: '', markers: [], isMember, waitingForMembers: true,
         claimableMembers: [], codePreview: room.cloudId, codeLabel: '聚会码 · 6 位'
       })
       return
@@ -217,8 +221,19 @@ Page({
     const point = midpoint(room.members)
     const recommendations = recommendVenues(room, this.data.activeCategory, this.data.activeGoal).map((venue) => {
       const votes = (room.votes && room.votes[venue.id]) || []
-      return Object.assign({}, venue, { voteCount: votes.length, hasVoted: votes.indexOf(room.currentMemberId) >= 0 })
+      const goal = this.data.activeGoal
+      return Object.assign({}, venue, { voteCount: votes.length, hasVoted: votes.indexOf(room.currentMemberId) >= 0,
+        metricLabel: goal === 'total' ? '全员总通勤' : goal === 'equal' ? '通勤时间差' : '最远成员通勤',
+        metricMinutes: goal === 'total' ? venue.totalMinutes : goal === 'equal' ? venue.spreadMinutes : venue.maxMinutes,
+        estimateLabel: venue.routeCoverage === room.members.length ? '路线计算' : '含估算',
+        compactMetaText: [venue.categoryLabel, venue.rating > 0 ? `★ ${venue.rating}` : '',
+          venue.price > 0 ? `人均 ¥${venue.price}` : '', venue.source === 'manual' ? '成员提名' : ''].filter(Boolean).join(' · ')
+      })
     })
+    const recommendationContext = JSON.stringify([room.id, this.data.activeCategory, this.data.activeGoal, recommendations.map((v) => v.id)])
+    const visibleCount = recommendationContext === this.recommendationContext
+      ? Math.max(RECOMMENDATION_BATCH_SIZE, this.data.visibleCount) : RECOMMENDATION_BATCH_SIZE
+    this.recommendationContext = recommendationContext
     const selectedVenueId = recommendations.some((venue) => venue.id === this.data.selectedVenueId)
       ? this.data.selectedVenueId : (recommendations[0] && recommendations[0].id) || ''
     const markers = this.getMarkers(room, recommendations, selectedVenueId)
@@ -242,6 +257,8 @@ Page({
       }),
       point,
       recommendations,
+      visibleCount, visibleRecommendations: recommendations.slice(0, visibleCount),
+      selectedVenueName: (recommendations.find((v) => v.id === selectedVenueId) || {}).name || '',
       topRecommendationReason: explainTopRecommendation(recommendations, this.data.activeGoal),
       recommendationsStale,
       timeSuggestions,
@@ -286,7 +303,10 @@ Page({
     return members.concat([{ id: 100, latitude: selected.latitude, longitude: selected.longitude, width: 34, height: 42, iconPath: '/images/marker-place.svg', callout: { content: selected.name, display: 'ALWAYS', padding: 7, borderRadius: 10, bgColor: '#1f5eff', color: '#ffffff', fontSize: 11 } }])
   },
   selectCategory(event) {
-    this.setData({ activeCategory: event.currentTarget.dataset.id, selectedVenueId: '' }, () => this.loadRoom(true))
+    const activeCategory = event.currentTarget.dataset.id
+    if (!this.data.categories.some((item) => item.id === activeCategory) || activeCategory === this.data.activeCategory) return
+    this.setData({ activeCategory, visibleCount: RECOMMENDATION_BATCH_SIZE })
+    return this.loadRoom(true)
   },
   selectGoal(event) {
     const activeGoal = event.currentTarget.dataset.id
@@ -296,8 +316,19 @@ Page({
       equal: '优先缩小大家通勤时间的差距'
     }
     if (!descriptions[activeGoal]) return
-    this.setData({ activeGoal, goalDescription: descriptions[activeGoal], selectedVenueId: '' }, () => this.loadRoom(true))
+    if (activeGoal === this.data.activeGoal) return
+    this.setData({ activeGoal, goalDescription: descriptions[activeGoal], visibleCount: RECOMMENDATION_BATCH_SIZE })
+    return this.loadRoom(true)
   },
+  loadMoreRecommendations() {
+    const visibleCount = Math.min(this.data.recommendations.length, this.data.visibleCount + RECOMMENDATION_BATCH_SIZE)
+    this.setData({ visibleCount, visibleRecommendations: this.data.recommendations.slice(0, visibleCount) })
+  },
+  selectSection(event) {
+    const activeSection = event.currentTarget.dataset.id
+    if (this.data.sections.some((item) => item.id === activeSection)) this.setData({ activeSection })
+  },
+  toggleMap() { this.setData({ mapExpanded: !this.data.mapExpanded }) },
   refreshNearby() {
     if (!this.canEditRoom()) return Promise.resolve()
     if (this.data.refreshingNearby) return Promise.resolve()
@@ -349,7 +380,9 @@ Page({
   selectVenue(event) {
     const selectedVenueId = event.currentTarget.dataset.id
     const room = this.data.room
-    this.setData({ selectedVenueId, markers: this.getMarkers(room, this.data.recommendations, selectedVenueId) })
+    const selected = this.data.recommendations.find((v) => v.id === selectedVenueId)
+    if (!room || !selected) return
+    this.setData({ selectedVenueId, selectedVenueName: selected.name, markers: this.getMarkers(room, this.data.recommendations, selectedVenueId) })
   },
   followProgressAction() {
     if (!this.canEditRoom()) return
@@ -357,7 +390,9 @@ Page({
     if (!progress) return
     if (progress.nextAction === 'join') this.openJoinModal()
     else if (progress.nextAction === 'time') this.openAvailabilityModal()
-    else if (progress.nextAction === 'recommendations') wx.pageScrollTo({ selector: '#recommendations-section', duration: 300 })
+    else if (progress.nextAction === 'recommendations') this.setData({ activeSection: 'places' }, () => {
+      wx.pageScrollTo({ selector: '#recommendations-section', duration: 300 })
+    })
     else if (progress.nextAction === 'attendance') wx.pageScrollTo({ selector: '#final-plan-section', duration: 300 })
   },
   submitAttendance(event) {
