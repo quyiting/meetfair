@@ -22,7 +22,7 @@ const room = (members, extra = {}) => Object.assign({
 async function run() {
   const page = Object.assign({}, global.roomPage, {
     roomId: 'progress-room', data: JSON.parse(JSON.stringify(global.roomPage.data)),
-    setData(values) { Object.assign(this.data, values) }
+    setData(values, callback) { Object.assign(this.data, values); if (callback) callback() }
   })
   stored = [room([])]
   await page.loadRoom(true)
@@ -46,6 +46,7 @@ async function run() {
   await updateMyAvailability('progress-room', [{ start: '18:00', end: '21:00' }])
   await page.loadRoom(true)
   assert.strictEqual(page.data.collectionProgress.timeCount, 1)
+  assert.strictEqual(page.data.timeResponded, 1, '单人等待状态的时间标签仍显示已填写人数')
   assert.strictEqual(page.data.collectionProgress.nextAction, 'invite')
 
   stored[0].members.push(member('friend'))

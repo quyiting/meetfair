@@ -47,4 +47,20 @@ function getRouteMatrix(members, venues, meetingDate, meetingTime) {
   })
 }
 
-module.exports = { getNearbyVenues, getRouteMatrix, getSearchSource }
+function getRoutePreview(origin, destination, mode) {
+  return new Promise((resolve, reject) => {
+    if (!wx.cloud || !wx.cloud.callFunction) return reject(new Error('云开发不可用，请使用地图导航'))
+    wx.cloud.callFunction({ name: 'venueService', data: { action: 'routePreview',
+      origin: { latitude: origin.latitude, longitude: origin.longitude },
+      destination: { latitude: destination.latitude, longitude: destination.longitude }, mode },
+    success: ({ result }) => {
+      if (!result || !result.ok || !Array.isArray(result.routes) || !result.routes.length) {
+        reject(new Error(result && result.message || '暂无可用路线，请使用地图导航'))
+        return
+      }
+      resolve(result)
+    }, fail: () => reject(new Error('路线查询失败，请稍后重试或使用地图导航')) })
+  })
+}
+
+module.exports = { getNearbyVenues, getRouteMatrix, getSearchSource, getRoutePreview }

@@ -27,11 +27,37 @@
 
   <view class="page-shell result-shell">
     <view wx:if="{{room.endedAt}}" class="card final-venue-card"><view class="section-title">本次聚会已结束</view><view class="section-subtitle">仅可查看。结束不会立即删除位置，数据仍按原期限保留；可主动退出或删除。</view></view>
-    <view wx:if="{{!room.preview}}" class="final-venue-actions">
-      <button wx:if="{{room.currentUserIsOwner && !room.endedAt}}" disabled="{{endingRoom}}" bindtap="endCurrentRoom">结束聚会</button>
-      <button wx:if="{{room.currentUserIsOwner || isMember}}" bindtap="repeatRoom">再约一次</button>
-    </view>
-    <view wx:if="{{collectionProgress && !room.preview && !room.endedAt}}" class="card collection-progress-card">
+    <block wx:if="{{!room.preview}}">
+      <view id="final-plan-section" class="card final-venue-card">
+        <view class="section-title">{{finalPlanComplete ? '最终方案 · 版本 ' + (room.planRevision || 0) : '聚会方案待确定'}}</view>
+        <block wx:if="{{finalPlanComplete}}">
+          <view class="final-venue-name">{{room.finalVenue.name}}</view>
+          <view class="section-subtitle">{{room.dateText}}–{{finalEndTime}} · {{room.durationMinutes}} 分钟</view>
+          <view class="section-subtitle">{{room.finalVenue.address}}</view>
+          <view class="section-subtitle">参加 {{attendanceSummary.yes}} · 待定 {{attendanceSummary.maybe}} · 不参加 {{attendanceSummary.no}} · 未答复 {{attendanceSummary.unanswered}}</view>
+          <view wx:if="{{isMember && !attendanceSummary.myStatus && !room.endedAt}}" class="progress-hint">{{planUpdated ? '方案已更新，请重新确认是否参加。' : '请确认是否参加；方案变化后需重新答复。'}}</view>
+          <view wx:if="{{isMember && !room.endedAt}}" class="final-venue-actions">
+            <button disabled="{{attendanceSaving}}" bindtap="submitAttendance" data-status="yes">{{attendanceSummary.myStatus === 'yes' ? '✓ ' : ''}}参加</button>
+            <button disabled="{{attendanceSaving}}" bindtap="submitAttendance" data-status="maybe">{{attendanceSummary.myStatus === 'maybe' ? '✓ ' : ''}}待定</button>
+            <button disabled="{{attendanceSaving}}" bindtap="submitAttendance" data-status="no">{{attendanceSummary.myStatus === 'no' ? '✓ ' : ''}}不参加</button>
+          </view>
+        </block>
+        <view wx:else class="section-subtitle">{{room.finalVenue ? '地点已选：' + room.finalVenue.name : '先比较地点，再和朋友协商时间。'}}</view>
+        <view wx:if="{{room.finalVenue}}" class="final-venue-actions">
+          <button bindtap="copyFinalAddress">复制地址</button><button bindtap="navigateFinalVenue">导航</button><button open-type="share">分享方案</button>
+        </view>
+      </view>
+      <view wx:if="{{collectionProgress && !room.endedAt}}" class="room-progress-overview">
+        <text>位置 {{collectionProgress.locationCount}} 人 · 时间 {{collectionProgress.timeCount}} 人</text>
+        <button wx:if="{{room.cloudId}}" open-type="share">邀请</button>
+        <button wx:if="{{collectionProgress.nextAction === 'join' || collectionProgress.nextAction === 'time'}}" bindtap="followProgressAction">{{collectionProgress.nextLabel}}</button>
+        <button wx:else bindtap="selectSection" data-id="members">查看进度</button>
+      </view>
+      <view class="room-sections">
+        <button wx:for="{{sections}}" wx:key="id" class="room-section {{activeSection === item.id ? 'section-active' : ''}}" aria-label="{{item.label}}{{activeSection === item.id ? '，当前页' : ''}}" bindtap="selectSection" data-id="{{item.id}}">{{item.label}}</button>
+      </view>
+    </block>
+    <view wx:if="{{collectionProgress && !room.preview && activeSection === 'members'}}" class="card collection-progress-card">
       <view class="section-title">大家的填写进度</view>
       <view wx:if="{{collectionProgress.expectedCount}}" class="progress-expected">预计 {{collectionProgress.expectedCount}} 人（含自己，仅作参考）</view>
       <view class="progress-summary">
@@ -47,10 +73,10 @@
         </view>
       </view>
       <view class="progress-hint">{{collectionProgress.locationCount < 2 ? '至少 2 人提交位置即可开始推荐，不必等到预计人数到齐。' : '推荐仅使用已提交位置的成员信息；成员变化后请更新推荐。'}}</view>
-      <button wx:if="{{collectionProgress.nextAction === 'invite' && room.cloudId}}" class="progress-next-button" open-type="share">{{collectionProgress.nextLabel}}</button>
-      <button wx:elif="{{collectionProgress.nextAction !== 'invite'}}" class="progress-next-button" bindtap="followProgressAction">{{collectionProgress.nextLabel}}</button>
+      <button wx:if="{{!room.endedAt && collectionProgress.nextAction === 'invite' && room.cloudId}}" class="progress-next-button" open-type="share">{{collectionProgress.nextLabel}}</button>
+      <button wx:elif="{{!room.endedAt && collectionProgress.nextAction !== 'invite'}}" class="progress-next-button" bindtap="followProgressAction">{{collectionProgress.nextLabel}}</button>
     </view>
-    <button wx:if="{{room.cloudId && !room.preview && !room.endedAt && collectionProgress.nextAction !== 'invite'}}" class="room-share-button room-share-secondary" open-type="share">分享小程序链接给朋友</button>
+    <button wx:if="{{room.cloudId && !room.preview && !room.endedAt && activeSection === 'members' && collectionProgress.nextAction !== 'invite'}}" class="room-share-button room-share-secondary" open-type="share">邀请朋友加入</button>
     <view wx:if="{{!room.cloudId && room.currentUserIsOwner}}" class="empty-card card">
       <view class="empty-title">聚会仅保存在本机</view>
       <view class="empty-copy">{{room.syncError || '云端尚未同步，朋友无法通过 6 位聚会码协作。'}}</view>
@@ -64,30 +90,7 @@
       </view>
     </block>
     <block wx:else>
-    <view id="final-plan-section" class="card final-venue-card">
-      <view class="section-title">最终方案{{finalPlanComplete ? ' · 版本 ' + (room.planRevision || 0) : '待确定'}}</view>
-      <block wx:if="{{finalPlanComplete}}">
-        <view class="final-venue-name">{{room.finalVenue.name}}</view>
-        <view class="section-subtitle">{{room.dateText}}–{{finalEndTime}} · {{room.durationMinutes}} 分钟</view>
-        <view class="section-subtitle">{{room.finalVenue.address}}</view>
-        <view class="section-subtitle">参加 {{attendanceSummary.yes}} · 待定 {{attendanceSummary.maybe}} · 不参加 {{attendanceSummary.no}} · 未答复 {{attendanceSummary.unanswered}}</view>
-        <view wx:for="{{attendanceSummary.members}}" wx:key="id" class="progress-member-row"><text>{{item.name}}</text><text>{{item.label}}</text></view>
-        <view wx:if="{{isMember && !attendanceSummary.myStatus}}" class="progress-hint">{{planUpdated ? '方案已更新，请重新确认是否参加。' : '请确认当前方案；时间或地点变化后需重新答复。'}}</view>
-        <view wx:if="{{isMember && !room.endedAt}}" class="final-venue-actions">
-          <button disabled="{{attendanceSaving}}" bindtap="submitAttendance" data-status="yes">{{attendanceSummary.myStatus === 'yes' ? '✓ ' : ''}}参加</button>
-          <button disabled="{{attendanceSaving}}" bindtap="submitAttendance" data-status="maybe">{{attendanceSummary.myStatus === 'maybe' ? '✓ ' : ''}}待定</button>
-          <button disabled="{{attendanceSaving}}" bindtap="submitAttendance" data-status="no">{{attendanceSummary.myStatus === 'no' ? '✓ ' : ''}}不参加</button>
-        </view>
-      </block>
-      <view wx:else class="section-subtitle">创建者确定时间与地点后，大家可在这里确认是否参加。</view>
-      <view wx:if="{{!finalPlanComplete && room.finalVenue}}" class="section-subtitle">地点已确定：{{room.finalVenue.name}} · {{room.finalVenue.address}}</view>
-      <view wx:if="{{room.finalVenue}}" class="final-venue-actions">
-        <button bindtap="copyFinalAddress">复制地址</button>
-        <button bindtap="navigateFinalVenue">导航</button>
-        <button open-type="share">分享给朋友</button>
-      </view>
-    </view>
-    <block wx:if="{{waitingForMembers}}">
+    <block wx:if="{{waitingForMembers && activeSection === 'places'}}">
       <view class="card final-venue-card">
         <view class="section-title">成员提名地点</view>
         <view wx:for="{{nominatedVenues}}" wx:key="id" class="progress-member-row"><text>{{item.name}}</text><button wx:if="{{item.canRemove && !room.endedAt}}" size="mini" data-id="{{item.id}}" disabled="{{nominationSaving}}" bindtap="removeNominatedVenue">删除</button></view>
@@ -101,11 +104,8 @@
         <button wx:if="{{isMember && !room.endedAt}}" class="time-edit-button" bindtap="openEditMember">修改我的位置</button>
         <button wx:if="{{isMember && !room.endedAt}}" class="time-edit-button" bindtap="openAvailabilityModal">填写或修改我的可用时间</button>
       </view>
-      <button wx:if="{{room.currentUserIsOwner}}" class="delete-room-button" bindtap="deleteCurrentRoom">删除本次聚会及位置数据</button>
-      <button wx:if="{{isMember && !room.currentUserIsOwner}}" class="delete-room-button" bindtap="leaveCurrentRoom">退出聚会并删除我的位置</button>
     </block>
-    <block wx:else>
-    <view wx:if="{{room.meetingDate}}" class="card time-suggestion-card">
+    <view wx:if="{{room.meetingDate && activeSection === 'time'}}" class="card time-suggestion-card">
       <view class="section-title">聚会时间建议 · {{room.durationMinutes}} 分钟</view>
       <view wx:for="{{dateResponses}}" wx:key="date" class="section-subtitle">{{item.date}}：{{item.responded}} / {{room.members.length}} 人已答复</view>
       <view class="section-subtitle">{{timeResponded}} / {{room.members.length}} 人已填写可用时间{{room.finalTimeAt ? ' · 创建者已确定 ' + room.meetingTime : ''}}</view>
@@ -116,10 +116,7 @@
       <view wx:if="{{!timeSuggestions.length}}" class="section-subtitle">暂无能覆盖完整聚会时长的时段；可补充时间或与朋友协商。当天会预留通勤缓冲。</view>
       <button wx:if="{{isMember && !room.endedAt}}" class="time-edit-button" bindtap="openAvailabilityModal">填写或修改我的可用时间</button>
     </view>
-    <view class="fairness-card card">
-      <view class="fairness-icon">⌘</view>
-      <view class="fairness-text"><view class="fairness-title">选择这次聚会的推荐目标</view><view class="fairness-copy">{{goalDescription}}。下拉页面可同步朋友的加入和投票。</view></view>
-    </view>
+    <block wx:if="{{activeSection === 'places' && !waitingForMembers}}">
     <view wx:if="{{room.candidateDates.length > 1 && !room.finalTimeAt}}" class="recommendation-reason">日期尚未最终确定，地图、营业状态与路线暂按 {{room.meetingDate}} {{room.meetingTime}} 计算。</view>
     <view wx:if="{{recommendationsStale}}" class="empty-card card">
       <view class="empty-title">{{room.schemaVersion === 2 && !room.venues.length ? '等待生成首次推荐' : '成员信息已变化，推荐待更新'}}</view>
@@ -128,28 +125,30 @@
       <view wx:else class="empty-copy">等待有权限的成员更新推荐后会自动同步。</view>
     </view>
 
-    <map class="meeting-map" latitude="{{point.latitude}}" longitude="{{point.longitude}}" scale="13" markers="{{markers}}" show-location="false"></map>
-    <view class="map-caption"><text>●</text> 橙色为朋友出发点，蓝色为当前推荐地点</view>
+    <button class="map-toggle" bindtap="toggleMap">{{mapExpanded ? '收起地图 ↑' : '展开地图，查看大家与选中地点的位置 ↓'}}</button>
+    <block wx:if="{{mapExpanded}}">
+      <map class="meeting-map" latitude="{{point.latitude}}" longitude="{{point.longitude}}" scale="13" markers="{{markers}}" show-location="false"></map>
+      <view class="map-caption"><text>●</text> 橙色为朋友出发点，蓝色为当前推荐地点</view>
+    </block>
 
     <view class="category-tabs"><view wx:for="{{categories}}" wx:key="id" class="category-tab {{activeCategory === item.id ? 'tab-active' : ''}}" bindtap="selectCategory" data-id="{{item.id}}">{{item.label}}</view></view>
     <view class="goal-tabs"><view wx:for="{{goals}}" wx:key="id" class="category-tab {{activeGoal === item.id ? 'tab-active' : ''}}" bindtap="selectGoal" data-id="{{item.id}}">{{item.label}}</view></view>
+    <view class="section-subtitle goal-description">{{goalDescription}}。下拉页面可同步朋友的加入和投票。</view>
     <view id="recommendations-section" class="list-heading"><view><view class="section-title">推荐地点</view><view class="section-subtitle">{{room.venueSourceLabel}}</view></view><button wx:if="{{!room.endedAt && (!room.cloudId || room.currentUserIsOwner || (room.schemaVersion === 2 && isMember))}}" class="search-nearby" disabled="{{refreshingNearby}}" bindtap="refreshNearby">{{room.schemaVersion === 2 && !room.venues.length ? '生成推荐' : '更新附近'}}</button></view>
     <view wx:if="{{topRecommendationReason}}" class="recommendation-reason">{{topRecommendationReason}}</view>
     <button wx:if="{{isMember && !room.endedAt}}" class="time-edit-button" bindtap="chooseNominationLocation">＋ 提名一个地点（{{nominatedVenues.length}} / 8）</button>
+    <view wx:if="{{selectedVenueId}}" class="selected-venue-summary">已选：{{selectedVenueName}}</view>
 
     <view wx:if="{{recommendations.length}}" class="venue-list">
-      <view wx:for="{{recommendations}}" wx:key="id" class="venue-card card {{selectedVenueId === item.id ? 'venue-selected' : ''}}" bindtap="selectVenue" data-id="{{item.id}}">
+      <view wx:for="{{visibleRecommendations}}" wx:key="id" class="venue-card card {{selectedVenueId === item.id ? 'venue-selected' : ''}}" bindtap="selectVenue" data-id="{{item.id}}">
         <view class="venue-rank">{{index + 1}}</view>
-        <view class="venue-main" bindtap="openPlace" data-id="{{item.id}}">
-          <view class="venue-title-row"><view class="venue-name">{{item.name}}</view><view class="fairness-tag">{{item.fairness}}</view></view>
-          <view class="venue-info">{{item.metaText}}</view>
-          <view wx:if="{{item.source === 'manual'}}" class="section-subtitle">成员提名 · 价格和评分未知</view>
-          <view class="venue-note">{{item.highlight}}</view>
-          <view wx:if="{{item.preferenceMatchText}}" class="preference-match">{{item.preferenceMatchText}}</view>
-          <view wx:if="{{item.budgetStatus}}" class="budget-fit">{{item.budgetStatus}}</view>
-          <view class="travel-summary">最远 <text>{{item.maxMinutes}} 分钟</text>　平均 {{item.averageMinutes}} 分钟 · 差距 {{item.spreadMinutes}} 分钟 · 真实路线 {{item.routeCoverage}}/{{room.members.length}} 人</view>
+        <view class="venue-main">
+          <view class="venue-title-row"><view class="venue-name">{{item.name}}</view><text wx:if="{{selectedVenueId === item.id}}" class="venue-selected-label">已选中</text></view>
+          <view class="venue-info">{{item.compactMetaText}}</view>
+          <view class="venue-address">{{item.address || '地址暂缺'}}</view>
+          <view class="travel-summary">{{item.metricLabel}} <text>{{item.metricMinutes}} 分钟</text><text class="estimate-label">{{item.estimateLabel}}</text></view>
+          <view class="venue-actions"><button class="venue-detail-button" catchtap="openPlace" data-id="{{item.id}}">详情与路线 ›</button><button wx:if="{{!room.endedAt}}" class="vote-button {{item.hasVoted ? 'voted' : ''}}" catchtap="toggleVote" data-id="{{item.id}}">{{item.hasVoted ? '♥ 已投' : '♡ 投票'}} {{item.voteCount}}</button><text wx:else class="venue-info">{{item.voteCount}} 票</text></view>
         </view>
-        <button wx:if="{{!room.endedAt}}" class="vote-button {{item.hasVoted ? 'voted' : ''}}" catchtap="toggleVote" data-id="{{item.id}}">♥ {{item.voteCount}}</button>
       </view>
     </view>
     <view wx:else class="empty-card card">
@@ -158,14 +157,22 @@
       <view class="empty-copy">试试切换活动类型，或重新搜索折中区域附近的地点。</view>
       <button wx:if="{{!room.endedAt && (!room.cloudId || room.currentUserIsOwner || (room.schemaVersion === 2 && isMember))}}" class="empty-action" disabled="{{refreshingNearby}}" bindtap="refreshNearby">重新搜索附近</button>
     </view>
-    <button wx:if="{{room.currentUserIsOwner && selectedVenueId && !room.endedAt}}" class="confirm-venue-button" bindtap="confirmSelectedVenue">{{room.finalVenue ? '重新确定选中的地点' : '确定选中的地点'}}</button>
+    <view wx:if="{{recommendations.length}}" class="recommendation-pagination"><view>已展示 {{visibleRecommendations.length}} / {{recommendations.length}} 个地点</view><button wx:if="{{visibleRecommendations.length < recommendations.length}}" bindtap="loadMoreRecommendations">查看更多地点</button><view wx:else class="pagination-end">已展示全部候选</view></view>
+    <button wx:if="{{room.currentUserIsOwner && selectedVenueId && !room.endedAt}}" class="confirm-venue-button" bindtap="confirmSelectedVenue">{{room.finalVenue ? '更改聚会地点' : '确定这个地点'}}</button>
     <view wx:for="{{nominatedVenues}}" wx:key="id" class="progress-member-row"><text>提名：{{item.name}}</text><button wx:if="{{item.canRemove && !room.endedAt}}" size="mini" data-id="{{item.id}}" disabled="{{nominationSaving}}" bindtap="removeNominatedVenue">删除</button></view>
+    </block>
+    <block wx:if="{{activeSection === 'members'}}">
+    <view wx:if="{{finalPlanComplete}}" class="card collection-progress-card"><view class="section-title">参加情况</view><view wx:for="{{attendanceSummary.members}}" wx:key="id" class="progress-member-row"><text>{{item.name}}</text><text>{{item.label}}</text></view></view>
     <view wx:if="{{claimableMembers.length && !room.endedAt}}" class="claim-card card">
       <view class="section-title">邀请预填成员认领</view>
       <view class="section-subtitle">为每个人生成一次性认领码，私下发送给本人。</view>
       <button wx:for="{{claimableMembers}}" wx:key="id" class="claim-button" bindtap="issueClaimCode" data-id="{{item.id}}">生成 {{item.name}} 的认领码</button>
     </view>
     <button wx:if="{{isMember && !room.endedAt}}" class="edit-member-button" bindtap="openEditMember">编辑我的位置与出行信息</button>
+    <view class="final-venue-actions">
+      <button wx:if="{{room.currentUserIsOwner && !room.endedAt}}" disabled="{{endingRoom}}" bindtap="endCurrentRoom">结束聚会</button>
+      <button wx:if="{{room.currentUserIsOwner || isMember}}" bindtap="repeatRoom">再约一次</button>
+    </view>
     <button wx:if="{{room.currentUserIsOwner}}" class="delete-room-button" bindtap="deleteCurrentRoom">删除本次聚会及位置数据</button>
     <button wx:if="{{isMember && !room.currentUserIsOwner}}" class="delete-room-button" bindtap="leaveCurrentRoom">退出聚会并删除我的位置</button>
     </block>
