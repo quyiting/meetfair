@@ -94,6 +94,20 @@ async function run() {
   stored = [localRoom]
   assert.strictEqual(await cloudCreateRoom(localRoom), null)
   assert.match(stored[0].syncError, /网络或云服务暂时不可用/)
+
+  stored = [{ id: 'watched-room', signalId: 'signal-1' }]
+  let signalQuery
+  wx.cloud = { database: () => ({ collection: () => ({ where(query) {
+    signalQuery = query
+    return { watch: () => ({ close() {} }) }
+  } }) }) }
+  const watchPage = Object.assign({}, page, {
+    roomId: 'watched-room', pageVisible: true, watchedSignalId: '', roomWatcher: null
+  })
+  watchPage.startWatch()
+  assert.deepStrictEqual(signalQuery, { _id: 'signal-1', openid: '{openid}' },
+    '实时监听查询必须包含安全规则中的本人身份条件')
+  watchPage.closeWatch()
   console.log('room preview tests: ok')
 }
 

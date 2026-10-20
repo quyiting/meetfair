@@ -112,7 +112,7 @@ Page({
     this.closeWatch()
     this.watchedSignalId = room.signalId
     try {
-      this.roomWatcher = wx.cloud.database().collection('roomSignals').where({ _id: room.signalId }).watch({
+      this.roomWatcher = wx.cloud.database().collection('roomSignals').where({ _id: room.signalId, openid: '{openid}' }).watch({
         onChange: (snapshot) => {
           const signal = snapshot.docs && snapshot.docs[0]
           if (!signal) {
